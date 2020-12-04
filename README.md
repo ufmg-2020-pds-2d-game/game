@@ -36,7 +36,7 @@ ex:
 + sprint 2 ( finalização da engine local com facilitação do GameJoltAPI)
 + sprint 3 (finalização da facilitação do desenvolvimento com GameJolt).
 ```
-Inicialmente **não** teremos sprint de produção porém isso poderar alterar no futuro.
+Inicialmente **não** teremos sprint de produção, porém isso poderar ser alterado no futuro.
 
 ## Principais Features:
 ### Renderização 2D
