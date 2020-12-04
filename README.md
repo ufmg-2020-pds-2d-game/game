@@ -29,7 +29,7 @@ O scrumban também forneceria mais adaptabilidade caso uma sprint transbordasse 
 + sprint 2 ( iniciação do mvp do jogo a partir da engine)
 + sprint 3 ( finalização do jogo).
 ```
-Neste exemplo caso a sprint 1 venha a falhar possamos mudar adaptar o projeto facilmente 
+Neste exemplo caso a sprint 1 venha a falhar possamos mudar / adaptar o projeto facilmente 
 ex:
 ```diff
 - sprint 1 (criação da engine local) FALHA
