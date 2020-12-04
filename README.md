@@ -1,5 +1,4 @@
-# Projeto
-Projeto desenvolvido durante o curso de Prática de Desenvolvimento de Software - UFMG 2020/2°
+# Projeto desenvolvido durante o curso de Prática de Desenvolvimento de Software - UFMG 2020/2°
 
 # Basic 2D Game Engine
 
