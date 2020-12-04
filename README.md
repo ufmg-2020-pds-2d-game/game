@@ -24,4 +24,4 @@ Created by:
 - Guilherme Teres Nunes (UnidayStudio)
 - Bernardo Augusto de Oliveira Senna (Bernardo-Senna)
 - Victor Hugo Nascimento Costa Val (Deheide)
-- João Marcos Machado Couto
+- João Marcos Machado Couto (joaomcouto)
