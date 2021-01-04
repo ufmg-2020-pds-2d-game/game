@@ -20,6 +20,10 @@ Os Integrantes da equipe são:
 - Victor Hugo Nascimento Costa Val (Deheide)
 - João Marcos Machado Couto (joaomcouto)
 
+## Gestão do projeto
+As sprints serão controladas via Trello:
+![Screenshot](https://media.discordapp.net/attachments/783065895982334002/795734782548901918/H5JS9eqTdbzOfm4V8L0dtmas2WN5f8D1g8cvjuXT4UAAAAASUVORK5CYII.png)
+
 ## Método de Desenvolvimento
 O time planeja usar o scrumban, um método que mistura o scrum e o kanban (métodos ágeis). A ideia de usar esse método é fornecer alta adaptabilidade da sprint em questão de tasks, caso seja terminada todas as tasks antes que a sprint seja finalizada, seria possivel puxar tarefas da proxima que se encontra no backlog.
 
@@ -76,4 +80,3 @@ else if (keyPress(event::DKEY)){
 	transform->position.x += speed;
 }
 ```
-![Screenshot](https://media.discordapp.net/attachments/783065895982334002/795734782548901918/H5JS9eqTdbzOfm4V8L0dtmas2WN5f8D1g8cvjuXT4UAAAAASUVORK5CYII.png)
