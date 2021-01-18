@@ -25,3 +25,7 @@ void Entity::Update(){
 void Entity::Draw(App * app){
 
 }
+
+void Entity::AddComponent(Component * c){
+	m_components.push_back(c);
+}
