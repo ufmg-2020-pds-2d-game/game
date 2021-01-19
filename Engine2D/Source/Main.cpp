@@ -1,9 +1,6 @@
-/*#define GS_IMPL
-#define GS_NO_HIJACK_MAIN
-#include <Gunslinger/gs.h>*/
-
-#include "Engine\App.h"
-#include "Engine\Entity.h"
+#include "Engine/App.h"
+#include "Engine/Entity.h"
+#include "Engine/Component.h"
 
 int main(int argc, char *argv[]) {
 	App app;
@@ -11,6 +8,8 @@ int main(int argc, char *argv[]) {
 	//app.LoadTexture("food", "Data\\food.png");
 
 	Entity* a = new Entity();
+	a->AddComponent(new Component());
+
 	app.AddEntity(a);
 
 	app.Run();

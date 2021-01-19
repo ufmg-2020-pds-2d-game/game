@@ -1,8 +1,11 @@
 #include "Entity.h"
 
 #include "Engine/App.h"
+#include "Component.h"
 
 Entity::Entity() {
+	m_started = false;
+
 	position.x = 50.f;
 	position.y = 50.f;
 
@@ -15,11 +18,16 @@ Entity::~Entity() {
 }
 
 void Entity::Start(){
-
+	m_started = true;
+	for (auto c : m_components) {
+		c->Start();
+	}
 }
 
 void Entity::Update(){
-
+	for (auto c : m_components) {
+		c->Update();
+	}
 }
 
 void Entity::Draw(App * app){
@@ -28,4 +36,10 @@ void Entity::Draw(App * app){
 
 void Entity::AddComponent(Component * c){
 	m_components.push_back(c);
+
+	c->SetEntity(this);
+
+	if (m_started) {
+		c->Start();
+	}
 }

@@ -28,6 +28,7 @@ protected:
 	Vector position;
 	Vector scale;
 private:
+	bool m_started;
 };
 
 #endif // ! ENTITY_H
