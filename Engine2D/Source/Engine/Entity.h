@@ -17,7 +17,21 @@ public:
 	virtual void Update();
 	virtual void Draw(App* app);
 
-	void AddComponent(Component* c);
+	Component* Add(Component* c);
+
+	template <typename T>
+	T* New() {
+		return Add(new T());
+	}
+
+	template <typename T>
+	T* Get() {
+		for (auto i : m_components) {
+			T* c = dynamic_cast<T*>(i);
+			if (c)	return c;
+		}
+		return nullptr;
+	}
 
 	inline Vector* GetPosition() { return &position; }
 	inline Vector* GetScale() { return &scale; }

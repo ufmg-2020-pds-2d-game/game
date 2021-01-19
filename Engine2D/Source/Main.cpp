@@ -8,7 +8,7 @@ int main(int argc, char *argv[]) {
 	//app.LoadTexture("food", "Data\\food.png");
 
 	Entity* a = new Entity();
-	a->AddComponent(new Component());
+	a->Add(new Component());
 
 	app.AddEntity(a);
 

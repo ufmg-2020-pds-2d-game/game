@@ -14,7 +14,10 @@ Entity::Entity() {
 }
 
 Entity::~Entity() {
-
+	for (auto c : m_components) {
+		delete c;
+	}
+	m_components.clear();
 }
 
 void Entity::Start(){
@@ -34,7 +37,7 @@ void Entity::Draw(App * app){
 
 }
 
-void Entity::AddComponent(Component * c){
+Component * Entity::Add(Component * c){
 	m_components.push_back(c);
 
 	c->SetEntity(this);
@@ -42,4 +45,5 @@ void Entity::AddComponent(Component * c){
 	if (m_started) {
 		c->Start();
 	}
+	return c;
 }

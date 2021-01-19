@@ -45,7 +45,10 @@ App::App() {
 }
 
 App::~App() {
-
+	for (auto e : m_entities) {
+		delete e;
+	}
+	m_entities.clear();
 }
 
 void App::Start(){
