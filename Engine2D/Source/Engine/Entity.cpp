@@ -5,12 +5,6 @@
 
 Entity::Entity() {
 	m_started = false;
-
-	position.x = 50.f;
-	position.y = 50.f;
-
-	scale.x = 100.f;
-	scale.y = 100.f;
 }
 
 Entity::~Entity() {

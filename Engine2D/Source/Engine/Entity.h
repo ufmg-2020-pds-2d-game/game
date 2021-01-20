@@ -49,14 +49,9 @@ public:
 		}
 	}
 
-	inline Vector* GetPosition() { return &position; }
-	inline Vector* GetScale() { return &scale; }
-
 protected:
 	std::vector<Component*> m_components;
 
-	Vector position;
-	Vector scale;
 private:
 	bool m_started;
 };
