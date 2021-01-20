@@ -2,6 +2,8 @@
 
 # Easy 2D Game Engine
 
+![TitleImage](https://media.discordapp.net/attachments/783065895982334002/801538602579263508/unknown.png?width=753&height=427)
+
 ## Resumo
 O objetivo do projeto é desenvolver uma **game engine** (ou **framework**) que permite usuários conseguirem criarem **Jogos 2D** de forma simples e eficiente, sem ter que se preocupar com detalhes menores de implementação. 
 
