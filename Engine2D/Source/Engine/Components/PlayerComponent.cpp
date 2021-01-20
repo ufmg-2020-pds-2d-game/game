@@ -13,7 +13,6 @@ PlayerComponent::~PlayerComponent() {
 
 void PlayerComponent::Update() {
 	Transform2D* t = GetEntity()->Get<Transform2D>();
-
 	
 	if (gs_platform_key_down(GS_KEYCODE_A)) {
 		t->position.x -= speed;
@@ -25,6 +24,7 @@ void PlayerComponent::Update() {
 	}
 
 	if (gs_platform_key_pressed(GS_KEYCODE_SPACE) || gs_platform_key_pressed(GS_KEYCODE_W)) {
+		PlayAudio("jump_s");
 		m_jumpForce = 50.f;
 	}
 	if (m_jumpForce > 0) {

@@ -9,8 +9,10 @@
 #include <Gunslinger/util/gs_idraw.h>
 #include <Gunslinger/util/gs_asset.h>
 
-
 #include "Entity.h"
+
+// Essa função vai chamar o PlaySound to App ativo.
+void PlayAudio(const std::string& name, float volume = 1.0f);
 
 class App {
 public:
@@ -24,6 +26,9 @@ public:
 	void Run();
 	
 	void LoadTexture(const std::string& name, const std::string& path);
+	void LoadAudio(const std::string& name, const std::string& path);
+
+	void PlayAudio(const std::string& name, float volume = 1.0f);
 
 	void AddEntity(Entity* e);
 

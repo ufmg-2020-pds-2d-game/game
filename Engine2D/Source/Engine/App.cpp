@@ -17,7 +17,6 @@
 
 static void AppInit(){
 	App* app = gs_engine_user_data(App);
-	//app->InitInternals();
 	app->Start();
 }
 
@@ -31,6 +30,15 @@ static void AppShutdown(){
 	app->End();
 }
 
+//---------------------------------------------------------------------------//
+
+void PlayAudio(const std::string& name, float volume) {
+	App* app = gs_engine_user_data(App);
+
+	app->PlayAudio(name, volume);
+}
+
+//---------------------------------------------------------------------------//
 
 App::App() {
 	gravity = 9.8f;
@@ -105,6 +113,16 @@ void App::LoadTexture(const std::string& name, const std::string& path) {
 	desc.mag_filter = GS_GRAPHICS_TEXTURE_FILTER_NEAREST;
 
 	m_assetTable[name] = gs_assets_load_from_file(&m_gsa, gs_asset_texture_t, path.c_str(), &desc);
+}
+
+void App::LoadAudio(const std::string & name, const std::string & path){
+	m_assetTable[name] = gs_assets_load_from_file(&m_gsa, gs_asset_audio_t, path.c_str());
+}
+
+void App::PlayAudio(const std::string & name, float volume){
+	gs_asset_audio_t* ap = gs_assets_getp(&m_gsa, gs_asset_audio_t, m_assetTable[name]);
+
+	gs_audio_play_source(ap->hndl, volume);
 }
 
 void App::AddEntity(Entity* e) {

@@ -18,6 +18,9 @@ int main(int argc, char *argv[]) {
 	app.LoadTexture("cloud_a", "./Data/background_cloudA.png");
 	app.LoadTexture("tree_a", "./Data/background_treeLarge.png");
 
+	// Carregando sons...
+	app.LoadAudio("jump_s", "./Data/sfx_movement_jump1.wav");
+
 	// Adicionando uma nuvem...
 	{
 		Entity* a = new Entity();
