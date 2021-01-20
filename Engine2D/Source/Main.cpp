@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
 		a->Add(new Transform2D({ 200.f + 200.f * i, 200.f - 50.f * i }, {100.f, -100.f}));
 		a->Add(new Image2D(i == 0 ? "c_red" : "c_purple"));
 
-		a->Add(new BoxCollider2D());
+		a->Add(new BoxCollider2D(0.6f, 0.9f));
 		a->Add(new RigidBody2D());
 
 		if (i == 0) {

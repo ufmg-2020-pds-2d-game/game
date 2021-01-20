@@ -11,9 +11,15 @@
 class BoxCollider2D : public Component {
 public:
 	BoxCollider2D();
+	BoxCollider2D(float w, float h);
 	virtual ~BoxCollider2D();
 
 	gs_aabb_t GetBoundingBox();
+
+	// Defaults: 1.0f
+	// Use esses parâmetros caso você queira deixar o BoundingBox
+	// menor ou maior que a forma original do objeto.
+	float width, height;
 };
 
 #endif // !BOX_COLLIDER_2D_COMPONENT_H

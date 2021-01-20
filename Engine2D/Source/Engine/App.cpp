@@ -42,7 +42,7 @@ void PlayAudio(const std::string& name, float volume) {
 
 App::App() {
 	gravity = 9.8f;
-	drawDebugAABB = false;
+	drawDebugAABB = true;
 
 	m_isRunning = false;
 
