@@ -28,6 +28,7 @@ public:
 	void AddEntity(Entity* e);
 
 	float gravity;
+	bool drawDebugAABB;
 protected:
 	void UpdatePhysics();
 	void Draw();

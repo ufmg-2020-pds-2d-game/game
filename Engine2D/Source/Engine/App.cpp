@@ -34,6 +34,7 @@ static void AppShutdown(){
 
 App::App() {
 	gravity = 9.8f;
+	drawDebugAABB = false;
 
 	m_isRunning = false;
 
@@ -133,8 +134,6 @@ void App::UpdatePhysics(){
 				continue;
 			}
 
-			gs_aabb_t a = collider->GetBoundingBox();
-
 			// Tratar a colisão com as outras entidades:
 			for (auto other : m_entities) {
 				// Não tratar colisão contra a propria entidade...
@@ -144,6 +143,7 @@ void App::UpdatePhysics(){
 				BoxCollider2D* otherB = other->Get<BoxCollider2D>();
 
 				if (otherT && otherB) {
+					gs_aabb_t a = collider->GetBoundingBox();
 					gs_aabb_t b = otherB->GetBoundingBox();
 
 					// Algoritmo de detecção e colisão 
@@ -156,10 +156,7 @@ void App::UpdatePhysics(){
 
 						transform->position.x += disp.x;
 						transform->position.y += disp.y;
-
-						break;
 					}
-
 				}
 			}
 		}
@@ -197,12 +194,24 @@ void App::Draw(){
 			// Finalmente, renderizamos um quadrado, que irá utilizar a
 			// textura e o transform enviado anteriormente.
 			gsi_rectvd(
-				&m_gsi, gs_v2(-0.5f, -0.5f), gs_v2(0.5f, 0.5f), gs_v2(0.f, 0.f), 
+				&m_gsi, gs_v2(-0.5f, -0.5f), gs_v2(1.0f, 1.0f), gs_v2(0.f, 0.f), 
 				gs_v2(1.f, 1.f), gs_color(255, 255, 255, 255), 
 				GS_GRAPHICS_PRIMITIVE_TRIANGLES
 			);
 			
 			// Removendo a matriz da entidade, pois já finalizamos aqui...
+			gsi_pop_matrix(&m_gsi);
+		}
+		// DEBUG: Desenhando o AABB
+		BoxCollider2D* collider = e->Get<BoxCollider2D>();
+		if (collider && drawDebugAABB) {
+			gsi_push_matrix(&m_gsi, GSI_MATRIX_MODELVIEW);
+
+			gs_aabb_t aabb = collider->GetBoundingBox();
+			gs_handle(gs_graphics_texture_t) hndl = {};
+			gsi_texture(&m_gsi, hndl);
+			gsi_rectvx(&m_gsi, aabb.min, aabb.max, gs_v2(0.f, 0.f), gs_v2(1.f, 1.f), GS_COLOR_GREEN, GS_GRAPHICS_PRIMITIVE_LINES);
+			
 			gsi_pop_matrix(&m_gsi);
 		}
 	}

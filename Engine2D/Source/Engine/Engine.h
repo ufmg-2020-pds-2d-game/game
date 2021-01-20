@@ -9,3 +9,5 @@
 #include "Engine/Components/Transform2D.h"
 #include "Engine/Components/BoxCollider2D.h"
 #include "Engine/Components/RigidBody2D.h"
+
+#include "Engine/Components/PlayerComponent.h"

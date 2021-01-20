@@ -131,7 +131,10 @@
   <ItemGroup>
     <ClCompile Include="Source\Engine\App.cpp" />
     <ClCompile Include="Source\Engine\Component.cpp" />
+    <ClCompile Include="Source\Engine\Components\BoxCollider2D.cpp" />
     <ClCompile Include="Source\Engine\Components\Image2D.cpp" />
+    <ClCompile Include="Source\Engine\Components\PlayerComponent.cpp" />
+    <ClCompile Include="Source\Engine\Components\RigidBody2D.cpp" />
     <ClCompile Include="Source\Engine\Components\Transform2D.cpp" />
     <ClCompile Include="Source\Engine\Entity.cpp" />
     <ClCompile Include="Source\Engine\Math\Vector.cpp" />
@@ -140,7 +143,10 @@
   <ItemGroup>
     <ClInclude Include="Source\Engine\App.h" />
     <ClInclude Include="Source\Engine\Component.h" />
+    <ClInclude Include="Source\Engine\Components\BoxCollider2D.h" />
     <ClInclude Include="Source\Engine\Components\Image2D.h" />
+    <ClInclude Include="Source\Engine\Components\PlayerComponent.h" />
+    <ClInclude Include="Source\Engine\Components\RigidBody2D.h" />
     <ClInclude Include="Source\Engine\Components\Transform2D.h" />
     <ClInclude Include="Source\Engine\Engine.h" />
     <ClInclude Include="Source\Engine\Entity.h" />
