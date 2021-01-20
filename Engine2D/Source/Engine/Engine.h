@@ -7,3 +7,5 @@
 
 #include "Engine/Components/Image2D.h"
 #include "Engine/Components/Transform2D.h"
+#include "Engine/Components/BoxCollider2D.h"
+#include "Engine/Components/RigidBody2D.h"
