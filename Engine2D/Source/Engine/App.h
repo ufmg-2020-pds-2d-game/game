@@ -22,17 +22,18 @@ public:
 	virtual void End();
 
 	void Run();
-
-	void InitInternals();
-
+	
 	void LoadTexture(const std::string& name, const std::string& path);
 
 	void AddEntity(Entity* e);
+protected:
+	void Draw();
 private:
 	bool m_isRunning;
 
 	std::vector<Entity*> m_entities;
 
+	gs_engine_t* m_engine;
 	gs_app_desc_t m_app;
 	gs_command_buffer_t m_gcb; // Used for submitting rendering commands to graphics backend
 	gs_immediate_draw_t m_gsi; // Immediate draw utility context
