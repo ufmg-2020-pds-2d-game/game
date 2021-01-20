@@ -10,6 +10,12 @@ Transform2D::Transform2D() {
 	scale.y = 400.f;
 }
 
+Transform2D::Transform2D(Vector pos, Vector scl){
+	position = pos;
+	rotation = 0.f;
+	scale = scl;
+}
+
 Transform2D::~Transform2D() {
 
 }

@@ -154,6 +154,6 @@ void App::Draw(){
 	// Aqui enviamos as isntruções de render para serem desenhadas.
 	// A cor passada no terceiro parâmetro dessa função representa
 	// a cor de fundo da tela.
-	gsi_render_pass_submit(&m_gsi, &m_gcb, gs_color(20, 20, 20, 255));
+	gsi_render_pass_submit(&m_gsi, &m_gcb, gs_color(236, 236, 236, 255));
 	gs_graphics_submit_command_buffer(&m_gcb);
 }

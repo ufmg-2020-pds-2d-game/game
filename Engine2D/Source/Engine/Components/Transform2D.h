@@ -8,6 +8,7 @@
 class Transform2D : public Component {
 public:
 	Transform2D();
+	Transform2D(Vector pos, Vector scl = Vector(400.f, 400.f));
 	virtual ~Transform2D();
 
 	Vector position;
