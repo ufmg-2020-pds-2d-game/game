@@ -11,15 +11,15 @@ Component::~Component(){
 }
 
 void Component::Start(){
-	std::cout << "Component: Start\n";
+	
 }
 
 void Component::Update(){
-	std::cout << "Component: Update\n";
+	
 }
 
 void Component::End(){
-	std::cout << "Component: End\n";
+	
 }
 
 Entity * Component::GetEntity(){

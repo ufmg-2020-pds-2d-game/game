@@ -1,13 +1,13 @@
 #include "Engine/Components/Transform2D.h"
 
 Transform2D::Transform2D() {
-	position.x = 50.f;
-	position.y = 50.f;
+	position.x = 250.f;
+	position.y = 250.f;
 
 	rotation = 0.f;
 
-	scale.x = 100.f;
-	scale.y = 100.f;
+	scale.x = 400.f;
+	scale.y = 400.f;
 }
 
 Transform2D::~Transform2D() {

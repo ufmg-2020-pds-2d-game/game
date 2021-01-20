@@ -112,5 +112,48 @@ void App::AddEntity(Entity* e) {
 }
 
 void App::Draw(){
+	gsi_camera2D(&m_gsi);
 
+	// Aqui iteramos sobre todas as entidades e, se elas tiverem
+	// o necessario para serem desenhadas na tela (Transform2D + 
+	// Image2D), desenhamos.
+	for (auto e : m_entities) {
+		Transform2D* transform = e->Get<Transform2D>();
+		Image2D* image = e->Get<Image2D>();
+
+		if (transform && image) {
+			// Cada entidade precisa de uma matrix de transformação
+			// diferente. Isso é necessário para que elas se movam
+			// livremente pelo cenário.
+			gsi_push_matrix(&m_gsi, GSI_MATRIX_MODELVIEW);
+
+			// Aqui passamos a posição, rotação e escala da entidade,
+			// através dos dados armazenados no Transform2D.
+			gsi_transf(&m_gsi, transform->position.x, transform->position.y, 0.f);
+			gsi_scalef(&m_gsi, transform->scale.x, transform->scale.y, 1.f);
+			gsi_rotatefv(&m_gsi, transform->rotation, GS_ZAXIS);
+
+			// Aqui obtemos a textura informada no Image2D e passamos
+			// ela para ser utilizada.
+			auto texture = gs_assets_getp(&m_gsa, gs_asset_texture_t, m_assetTable[image->imageName]);
+			gsi_texture(&m_gsi, texture->hndl);
+
+			// Finalmente, renderizamos um quadrado, que irá utilizar a
+			// textura e o transform enviado anteriormente.
+			gsi_rectvd(
+				&m_gsi, gs_v2(-0.5f, -0.5f), gs_v2(0.5f, 0.5f), gs_v2(0.f, 0.f), 
+				gs_v2(1.f, 1.f), gs_color(255, 255, 255, 255), 
+				GS_GRAPHICS_PRIMITIVE_TRIANGLES
+			);
+			
+			// Removendo a matriz da entidade, pois já finalizamos aqui...
+			gsi_pop_matrix(&m_gsi);
+		}
+	}
+
+	// Aqui enviamos as isntruções de render para serem desenhadas.
+	// A cor passada no terceiro parâmetro dessa função representa
+	// a cor de fundo da tela.
+	gsi_render_pass_submit(&m_gsi, &m_gcb, gs_color(20, 20, 20, 255));
+	gs_graphics_submit_command_buffer(&m_gcb);
 }
