@@ -69,6 +69,8 @@ int main(int argc, char *argv[]) {
 }
 ```
 
+![Game2](https://media.discordapp.net/attachments/783065895982334002/801539728368205824/unknown.png)
+
 ## Gestão do projeto
 As sprints serão controladas via Trello:
 ![Screenshot](https://media.discordapp.net/attachments/783065895982334002/795734782548901918/H5JS9eqTdbzOfm4V8L0dtmas2WN5f8D1g8cvjuXT4UAAAAASUVORK5CYII.png)
