@@ -33,6 +33,8 @@ static void AppShutdown(){
 
 
 App::App() {
+	gravity = 9.8f;
+
 	m_isRunning = false;
 
 	m_app = { 0 };
@@ -77,6 +79,7 @@ void App::Update(){
 		e->Update();
 	}
 
+	UpdatePhysics();
 	Draw();
 }
 
@@ -108,6 +111,22 @@ void App::AddEntity(Entity* e) {
 
 	if (m_isRunning) {
 		e->Start();
+	}
+}
+
+void App::UpdatePhysics(){
+	for (auto e : m_entities) {
+		Transform2D* transform = e->Get<Transform2D>();
+		RigidBody2D* body = e->Get<RigidBody2D>();
+
+		if (transform && body) {
+			transform->position.y += gravity;
+
+			BoxCollider2D* collider = e->Get<BoxCollider2D>();
+			for (auto other : m_entities) {
+				// Tratar a colisão com as outras entidades...
+			}
+		}
 	}
 }
 

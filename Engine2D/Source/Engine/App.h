@@ -26,7 +26,10 @@ public:
 	void LoadTexture(const std::string& name, const std::string& path);
 
 	void AddEntity(Entity* e);
+
+	float gravity;
 protected:
+	void UpdatePhysics();
 	void Draw();
 private:
 	bool m_isRunning;
