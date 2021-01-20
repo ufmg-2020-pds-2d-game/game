@@ -1,6 +1,4 @@
-#include "Engine/App.h"
-#include "Engine/Entity.h"
-#include "Engine/Component.h"
+#include "Engine/Engine.h"
 
 int main(int argc, char *argv[]) {
 	App app;
@@ -8,7 +6,8 @@ int main(int argc, char *argv[]) {
 	//app.LoadTexture("food", "Data\\food.png");
 
 	Entity* a = new Entity();
-	a->Add(new Component());
+	a->Add(new Transform2D());
+	a->Add(new Image2D());
 
 	app.AddEntity(a);
 

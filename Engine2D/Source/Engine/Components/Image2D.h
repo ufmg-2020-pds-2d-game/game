@@ -9,6 +9,7 @@
 class Image2D : public Component {
 public:
 	Image2D();
+	Image2D(const std::string& name);
 	virtual ~Image2D();
 
 	std::string imageName;

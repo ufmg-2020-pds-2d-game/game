@@ -4,6 +4,10 @@ Image2D::Image2D() {
 
 }
 
+Image2D::Image2D(const std::string & name){
+	imageName = name;
+}
+
 Image2D::~Image2D() {
 
 }
