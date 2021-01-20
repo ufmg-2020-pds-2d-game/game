@@ -28,10 +28,10 @@ int main(int argc, char *argv[]) {
 		app.AddEntity(a);
 	}
 	// Adicionando uma Entidade para o Jogador...
-	{ 
+	for (int i=0; i<3; i++){ 
 		Entity* a = new Entity();
 
-		a->Add(new Transform2D({ 200.f, 200.f }, {200.f, -200.f}));
+		a->Add(new Transform2D({ 200.f + 200.f * i, 200.f - 50.f * i }, {200.f, -200.f}));
 		a->Add(new Image2D("c_red"));
 
 		a->Add(new BoxCollider2D());

@@ -115,6 +115,12 @@ void App::AddEntity(Entity* e) {
 }
 
 void App::UpdatePhysics(){
+	// Esse método vai iterar sobre todas as entidades e:
+	// 1 - Se houver um RigidBody2D, aplicar a gravidade no Transform2D
+	// 2 - Se também houver um BoxCollider2D, irá iterar sobre todas as
+	// outras entidades para detectar e resolver colisões.
+	// Complexidade no pior caso: O(n²).
+
 	for (auto e : m_entities) {
 		Transform2D* transform = e->Get<Transform2D>();
 		RigidBody2D* body = e->Get<RigidBody2D>();
@@ -123,8 +129,38 @@ void App::UpdatePhysics(){
 			transform->position.y += gravity;
 
 			BoxCollider2D* collider = e->Get<BoxCollider2D>();
+			if (collider == nullptr) {
+				continue;
+			}
+
+			gs_aabb_t a = collider->GetBoundingBox();
+
+			// Tratar a colisão com as outras entidades:
 			for (auto other : m_entities) {
-				// Tratar a colisão com as outras entidades...
+				// Não tratar colisão contra a propria entidade...
+				if (other == e) { continue; }
+
+				Transform2D* otherT = other->Get<Transform2D>();
+				BoxCollider2D* otherB = other->Get<BoxCollider2D>();
+
+				if (otherT && otherB) {
+					gs_aabb_t b = otherB->GetBoundingBox();
+
+					// Algoritmo de detecção e colisão 
+					// Axis-Aligned Bounding Box + resolução da colisão
+					// com o algoritmo Minimum Translation Vector.
+					// (Ambos fornecidos pelo framework gunslinger)
+
+					if (gs_aabb_vs_aabb(&a, &b)) {
+						gs_vec2 disp = gs_aabb_aabb_mtv(&a, &b);
+
+						transform->position.x += disp.x;
+						transform->position.y += disp.y;
+
+						break;
+					}
+
+				}
 			}
 		}
 	}
@@ -141,6 +177,7 @@ void App::Draw(){
 		Image2D* image = e->Get<Image2D>();
 
 		if (transform && image) {
+			//transform->rotation += 0.1f;
 			// Cada entidade precisa de uma matrix de transformação
 			// diferente. Isso é necessário para que elas se movam
 			// livremente pelo cenário.
@@ -149,9 +186,9 @@ void App::Draw(){
 			// Aqui passamos a posição, rotação e escala da entidade,
 			// através dos dados armazenados no Transform2D.
 			gsi_transf(&m_gsi, transform->position.x, transform->position.y, 0.f);
-			gsi_scalef(&m_gsi, transform->scale.x, transform->scale.y, 1.f);
 			gsi_rotatefv(&m_gsi, transform->rotation, GS_ZAXIS);
-
+			gsi_scalef(&m_gsi, transform->scale.x, transform->scale.y, 1.f);
+			
 			// Aqui obtemos a textura informada no Image2D e passamos
 			// ela para ser utilizada.
 			auto texture = gs_assets_getp(&m_gsa, gs_asset_texture_t, m_assetTable[image->imageName]);
