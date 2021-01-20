@@ -10,6 +10,7 @@ public:
 
 	virtual void Start();
 	virtual void Update();
+	virtual void End();
 
 	Entity* GetEntity();
 	void SetEntity(Entity* e);

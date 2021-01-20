@@ -33,8 +33,11 @@ void Entity::Update(){
 	}
 }
 
-void Entity::Draw(App * app){
-
+void Entity::End(){
+	for (auto c : m_components) {
+		c->End();
+	}
+	m_started = false;
 }
 
 Component * Entity::Add(Component * c){

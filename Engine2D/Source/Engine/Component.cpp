@@ -18,6 +18,10 @@ void Component::Update(){
 	std::cout << "Component: Update\n";
 }
 
+void Component::End(){
+	std::cout << "Component: End\n";
+}
+
 Entity * Component::GetEntity(){
 	return m_entity;
 }

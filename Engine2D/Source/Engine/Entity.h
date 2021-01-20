@@ -13,9 +13,9 @@ public:
 	Entity();
 	virtual ~Entity();
 
-	virtual void Start();
-	virtual void Update();
-	virtual void Draw(App* app);
+	void Start();
+	void Update();
+	void End();
 
 	Component* Add(Component* c);
 
@@ -31,6 +31,22 @@ public:
 			if (c)	return c;
 		}
 		return nullptr;
+	}
+
+	template <typename T>
+	void Remove() {
+		size_t count = 0;
+		for (auto i : m_components) {
+			T* c = dynamic_cast<T*>(i);
+			if (c) {
+				i->End();
+				break;
+			}
+			count++;
+		}
+		if (count < m_components.size()) {
+			m_components.erase(m_components.begin());
+		}
 	}
 
 	inline Vector* GetPosition() { return &position; }
