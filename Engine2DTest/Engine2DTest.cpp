@@ -25,4 +25,21 @@ namespace Engine2DTest
 
 
 	};
+
+    // Testa a classe Entity
+    TEST_CLASS(EntityTests) 
+    {
+    public:
+        // Verifica se, ao tentar obter um componente
+        // que não foi adicionado a entidade, o retorno
+        // é de fato nullptr.
+        TEST_METHOD(TestGetComponentInvalid) {
+            Entity entity;
+
+            Component* t = entity.Get<Transform2D>();
+
+            Assert::IsTrue(t == nullptr);
+        }
+
+    };
 }
