@@ -1,6 +1,6 @@
 #include "Engine/Components/BoxCollider2D.h"
 
-#include "Engine/Engine.h"
+#include "Engine.h"
 
 BoxCollider2D::BoxCollider2D() {
 	width = 1.f;

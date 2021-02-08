@@ -1,6 +1,6 @@
 #include <ctime>
 
-#include "Engine/Engine.h"
+#include "Engine.h"
 
 int main(int argc, char *argv[]) {
 	App app;
@@ -8,18 +8,18 @@ int main(int argc, char *argv[]) {
 	std::srand(std::time(nullptr));
 
 	// Carregando as texturas...
-	app.LoadTexture("c_red", "./Data/character_roundRed.png");
-	app.LoadTexture("c_purple", "./Data/character_squarePurple.png");	
+	app.LoadTexture("c_red",		"./Data/character_roundRed.png");
+	app.LoadTexture("c_purple",		"./Data/character_squarePurple.png");	
 
-	app.LoadTexture("tile", "./Data/tile.png");
-	app.LoadTexture("tile_brick", "./Data/tile_brick.png");
-	app.LoadTexture("tile_block", "./Data/tile_block.png");
+	app.LoadTexture("tile",			"./Data/tile.png");
+	app.LoadTexture("tile_brick",	"./Data/tile_brick.png");
+	app.LoadTexture("tile_block",	"./Data/tile_block.png");
 
-	app.LoadTexture("cloud_a", "./Data/background_cloudA.png");
-	app.LoadTexture("tree_a", "./Data/background_treeLarge.png");
+	app.LoadTexture("cloud_a",		"./Data/background_cloudA.png");
+	app.LoadTexture("tree_a",		"./Data/background_treeLarge.png");
 
 	// Carregando sons...
-	app.LoadAudio("jump_s", "./Data/sfx_movement_jump1.wav");
+	app.LoadAudio("jump_s",			"./Data/sfx_movement_jump1.wav");
 
 	// Adicionando uma nuvem...
 	{

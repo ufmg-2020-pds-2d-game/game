@@ -1,7 +1,7 @@
-#include "Entity.h"
+#include "Engine/Entity.h"
 
 #include "Engine/App.h"
-#include "Component.h"
+#include "Engine/Component.h"
 
 Entity::Entity() {
 	m_started = false;

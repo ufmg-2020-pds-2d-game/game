@@ -1,6 +1,6 @@
 #include "Engine/Components/PlayerComponent.h"
 
-#include "Engine/Engine.h"
+#include "Engine.h"
 
 PlayerComponent::PlayerComponent() {
 	speed = 16.f;

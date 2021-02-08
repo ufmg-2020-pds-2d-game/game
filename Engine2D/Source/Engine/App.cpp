@@ -12,7 +12,7 @@
 
 #include <iostream>
 
-#include "Engine/Engine.h"
+#include "Engine.h"
 
 
 static void AppInit(){
@@ -42,7 +42,7 @@ void PlayAudio(const std::string& name, float volume) {
 
 App::App() {
 	gravity = 9.8f;
-	drawDebugAABB = true;
+	drawDebugAABB = false;
 
 	m_isRunning = false;
 
@@ -93,14 +93,15 @@ void App::Update(){
 }
 
 void App::End(){
-
+	for (auto e : m_entities) {
+		e->End();
+	}
 }
 
 
 void App::Run() {
 	m_isRunning = true;
 	m_engine->run();
-	//gs_engine_create(m_app)->run();
 }
 
 void App::LoadTexture(const std::string& name, const std::string& path) {
@@ -237,6 +238,7 @@ void App::Draw(){
 	// Aqui enviamos as isntruções de render para serem desenhadas.
 	// A cor passada no terceiro parâmetro dessa função representa
 	// a cor de fundo da tela.
+	//gsi_render_pass_submit(&m_gsi, &m_gcb, gs_color(51, 153, 218, 255));
 	gsi_render_pass_submit(&m_gsi, &m_gcb, gs_color(236, 236, 236, 255));
 	gs_graphics_submit_command_buffer(&m_gcb);
 }
