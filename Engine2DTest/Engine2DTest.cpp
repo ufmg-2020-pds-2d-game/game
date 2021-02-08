@@ -15,5 +15,14 @@ namespace Engine2DTest
 			Vector vec(2.0, 3.0);
 			Assert::AreEqual(vec.Length(), sqrt(13.0f));
 		}
+
+		TEST_METHOD(TestConstructor) {
+			Vector v1(1.f, 2.f);
+
+			Assert::AreEqual(v1.x, 1.f);
+			Assert::AreEqual(v1.y, 2.f);
+		}
+
+
 	};
 }

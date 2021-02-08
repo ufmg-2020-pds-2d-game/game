@@ -9,5 +9,6 @@
 
 // add headers that you want to pre-compile here
 #include "Engine/Math/Vector.h"
+#include "Engine.h"
 
 #endif //PCH_H
