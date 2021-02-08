@@ -51,5 +51,15 @@ namespace Engine2DTest
 
             Assert::IsTrue(t != nullptr);
         }
+
+        // Testa a criação de um novo componente usando
+        // o método da entidade.
+        TEST_METHOD(TestNewComponent) {
+            Entity entity;
+
+            auto t = entity.New<Transform2D>();
+
+            Assert::IsTrue(t != nullptr);
+        }
     };
 }
