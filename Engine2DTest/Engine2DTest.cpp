@@ -41,5 +41,15 @@ namespace Engine2DTest
             Assert::IsTrue(t == nullptr);
         }
 
+        // Testa a capacidade de adicionar e obter de
+        // volta um componente a uma entidade.
+        TEST_METHOD(TestAddAndGetComponent) {
+            Entity entity;
+            entity.Add(new Transform2D());
+
+            Component* t = entity.Get< Transform2D>();
+
+            Assert::IsTrue(t != nullptr);
+        }
     };
 }
