@@ -9,7 +9,7 @@ namespace Engine2DTest
 	TEST_CLASS(VectorTest)
 	{
 	public:
-		
+
 		TEST_METHOD(TestLength)
 		{
 			Vector vec(2.0, 3.0);
@@ -56,7 +56,7 @@ namespace Engine2DTest
 
 			Assert::AreEqual(v2.x, v1.x);
 			Assert::AreEqual(v2.y, v1.y);
-		}        
+		}
 
 		/*=============================
 		Operadores de Matemática Básica
@@ -97,42 +97,55 @@ namespace Engine2DTest
 			Assert::AreEqual(result.x, 2.f);
 			Assert::AreEqual(result.y, 2.f);
 		}
+
+		/*======================
+		Operadores de Comparação
+		======================*/
+
+		TEST_METHOD(TestOperatorCompareEqual) {
+			// Testa o operador "==" que verifica se dois vetores
+			// são iguais
+			bool result = Vector() == Vector(0.f, 0.f);
+
+			Assert::AreEqual(result, true);
+		}
+
 	};
 
-    // Testa a classe Entity
-    TEST_CLASS(EntityTests) 
-    {
-    public:
-        // Verifica se, ao tentar obter um componente
-        // que não foi adicionado a entidade, o retorno
-        // é de fato nullptr.
-        TEST_METHOD(TestGetComponentInvalid) {
-            Entity entity;
+	// Testa a classe Entity
+	TEST_CLASS(EntityTests)
+	{
+	public:
+		// Verifica se, ao tentar obter um componente
+		// que não foi adicionado a entidade, o retorno
+		// é de fato nullptr.
+		TEST_METHOD(TestGetComponentInvalid) {
+			Entity entity;
 
-            Component* t = entity.Get<Transform2D>();
+			Component* t = entity.Get<Transform2D>();
 
-            Assert::IsTrue(t == nullptr);
-        }
+			Assert::IsTrue(t == nullptr);
+		}
 
-        // Testa a capacidade de adicionar e obter de
-        // volta um componente a uma entidade.
-        TEST_METHOD(TestAddAndGetComponent) {
-            Entity entity;
-            entity.Add(new Transform2D());
+		// Testa a capacidade de adicionar e obter de
+		// volta um componente a uma entidade.
+		TEST_METHOD(TestAddAndGetComponent) {
+			Entity entity;
+			entity.Add(new Transform2D());
 
-            Component* t = entity.Get< Transform2D>();
+			Component* t = entity.Get< Transform2D>();
 
-            Assert::IsTrue(t != nullptr);
-        }
+			Assert::IsTrue(t != nullptr);
+		}
 
-        // Testa a criação de um novo componente usando
-        // o método da entidade.
-        TEST_METHOD(TestNewComponent) {
-            Entity entity;
+		// Testa a criação de um novo componente usando
+		// o método da entidade.
+		TEST_METHOD(TestNewComponent) {
+			Entity entity;
 
-            auto t = entity.New<Transform2D>();
+			auto t = entity.New<Transform2D>();
 
-            Assert::IsTrue(t != nullptr);
-        }
-    };
+			Assert::IsTrue(t != nullptr);
+		}
+	};
 }
