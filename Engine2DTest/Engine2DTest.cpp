@@ -350,6 +350,43 @@ namespace Engine2DTest{
 			app.forceQuit = true;
 			app.Run();
 		}
+
+		TEST_METHOD(AppLoadAudioSuccess) {
+			// De forma similar ao teste da textura, verifica se a engine
+			// consegue carregar um audio corretamente
+			App app;
+
+			try {
+				app.LoadAudio("audio", "./../Game/Data/sfx_movement_jump1.wav");
+				Assert::IsTrue(true);
+			}
+			catch (std::exception e) {
+				Assert::Fail();
+			}
+
+			// É necessário rodar a engine, mesmo que por um frame. 
+			app.forceQuit = true;
+			app.Run();
+		}
+
+		TEST_METHOD(AppLoadAudioFailure) {
+			// De forma similar ao teste da textura, verifica se a engine
+			// lança uma exceção ao tentar carregar um aqui que não existe.
+			App app;
+
+			try {
+				app.LoadAudio("nop", "./Esse Audio Nao existe.wav");
+				Assert::Fail((const wchar_t*)"O codigo não deveria chegar aqui!");
+			}
+			catch (std::exception e) {
+				// Identificou o erro e lançou a exceção!
+				Assert::IsTrue(true);
+			}
+
+			// É necessário rodar a engine, mesmo que por um frame. 
+			app.forceQuit = true;
+			app.Run();
+		}
 	};
 
     // Testa a classe Entity
