@@ -211,6 +211,26 @@ namespace Engine2DTest{
 			app.forceQuit = true;
 			app.Run();
 		}
+
+		void TestComponentVirtualMethodsCalledUtil(
+			bool* calledStart = nullptr,	// Método Start()
+			bool* calledUpdate = nullptr,	// Método Update()
+			bool* calledEnd = nullptr		// Método End()
+		) {
+
+		}
+
+		TEST_METHOD(TestComponentStartCall) {
+			bool calledStart = false;
+
+			TestComponentVirtualMethodsCalledUtil(
+				&calledStart,	// Método Start()
+				nullptr,		// Método Update()
+				nullptr			// Método End()
+			);
+
+			Assert::IsTrue(calledStart);
+		}
 	};
 
     // Testa a classe Entity
