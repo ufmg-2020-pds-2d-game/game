@@ -285,6 +285,30 @@ namespace Engine2DTest{
 
 			Assert::IsTrue(calledStart);
 		}
+
+		TEST_METHOD(TestComponentUpdateCall) {
+			bool calledUpdate = false;
+
+			TestComponentVirtualMethodsCalledUtil(
+				nullptr,        // M�todo Start()
+				&calledUpdate,    // M�todo Update()
+				nullptr            // Metodo End()
+			);
+
+			Assert::IsTrue(calledUpdate);
+		}
+
+		TEST_METHOD(TestComponentEndCall) {
+			bool calledEnd = false;
+
+			TestComponentVirtualMethodsCalledUtil(
+				nullptr,        // M�todo Start()
+				nullptr,        // M�todo Update()
+				&calledEnd        // Metodo End()
+			);
+
+			Assert::IsTrue(calledEnd);
+		}
 	};
 
     // Testa a classe Entity
