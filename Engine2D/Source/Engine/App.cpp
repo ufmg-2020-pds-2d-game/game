@@ -53,6 +53,8 @@ App::App() {
 	camera.zoom = 1.f;
 	camera.rotation = 0.f;
 	
+	forceQuit = false;
+
 	m_isRunning = false;
 
 	m_app = { 0 };
@@ -89,7 +91,7 @@ void App::Start(){
 }
 
 void App::Update(){
-	if (gs_platform_key_pressed(GS_KEYCODE_ESC)) {
+	if (gs_platform_key_pressed(GS_KEYCODE_ESC) || forceQuit) {
 		gs_engine_quit();
 	}
 

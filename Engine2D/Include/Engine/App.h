@@ -45,6 +45,7 @@ public:
 		float zoom;
 		float rotation;
 	} camera;
+	bool forceQuit; // Used for unit testing!
 protected:
 	void UpdatePhysics();
 	void Draw();
