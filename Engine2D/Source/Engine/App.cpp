@@ -121,15 +121,17 @@ void App::LoadTexture(const std::string& name, const std::string& path) {
 		throw std::exception("Load Texture Error: File doesn't exist!");
 	}
 
-	// Essa struct descreve o formato interno da textura para ser desenhada
-	// na tela. É necessário para trocar o filtro e impedir que as imagens
-	// em pixel art fiquem embaçadas.
-	gs_graphics_texture_desc_t desc = {};
-	desc.format = GS_GRAPHICS_TEXTURE_FORMAT_RGBA8;
-	desc.min_filter = GS_GRAPHICS_TEXTURE_FILTER_NEAREST;
-	desc.mag_filter = GS_GRAPHICS_TEXTURE_FILTER_NEAREST;
+	gs_asset_texture_t tex0 = { 0 };
 
-	m_assetTable[name] = gs_assets_load_from_file(&m_gsa, gs_asset_texture_t, path.c_str(), &desc);
+	// Descrevendo o formato interno da textura 
+	// para ser desenhada na tela. 
+	tex0.desc.format = GS_GRAPHICS_TEXTURE_FORMAT_RGBA8;
+	tex0.desc.min_filter = GS_GRAPHICS_TEXTURE_FILTER_LINEAR;
+	tex0.desc.mag_filter = GS_GRAPHICS_TEXTURE_FILTER_LINEAR;
+
+	gs_asset_texture_load_from_file(path.c_str(), &tex0, NULL, false, false);
+
+	m_assetTable[name] = gs_assets_create_asset(&m_gsa, gs_asset_texture_t, &tex0);
 }
 
 void App::LoadAudio(const std::string& name, const std::string& path) {

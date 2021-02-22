@@ -24,14 +24,14 @@ int main(int argc, char *argv[]) {
 	// Adicionando uma nuvem...
 	{
 		Entity* a = new Entity();
-		a->Add(new Transform2D({ 260.f, 170.f }, { 350.f, -175.f }));
+		a->Add(new Transform2D({ 260.f, 170.f }, { 350.f, 175.f }));
 		a->Add(new Image2D("cloud_a"));
 		app.AddEntity(a);
 	}
 	// Adicionando uma arvore...
 	{
 		Entity* a = new Entity();
-		a->Add(new Transform2D({ 650.f, 400.f }, { 200.f, -400.f }));
+		a->Add(new Transform2D({ 650.f, 400.f }, { 200.f, 400.f }));
 		a->Add(new Image2D("tree_a"));
 		app.AddEntity(a);
 	}
@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
 	for (int i=0; i<3; i++){ 
 		Entity* a = new Entity();
 
-		a->Add(new Transform2D({ 200.f + 200.f * i, 200.f - 50.f * i }, {100.f, -100.f}));
+		a->Add(new Transform2D({ 200.f + 200.f * i, 200.f - 50.f * i }, {100.f, 100.f}));
 		a->Add(new Image2D(i == 0 ? "c_red" : "c_purple"));
 
 		a->Add(new BoxCollider2D(0.6f, 0.9f));
@@ -53,14 +53,14 @@ int main(int argc, char *argv[]) {
 		app.AddEntity(a);
 	}
 	/// Adicionando Entidades para o Chão...
-	for (int i=0; i<10; i++) {
+	for (int i=-10; i<20; i++) {
 		for (int j = 0; j < 3; j++) {
 			if (j > 0 && std::rand() % 100 < 60) {
 				break;
 			}
 			Entity* a = new Entity();
 
-			a->Add(new Transform2D({ 100.f * i, 600.f - 100.f * j}, { 100.f, 100.f }));
+			a->Add(new Transform2D({ 100.f * i, 600.f - 100.f * j}, { 100.f, -100.f }));
 			std::vector<std::string> names = { "tile", "tile_brick", "tile_block" };
 			a->Add(new Image2D(names[std::rand() % 3]));
 
