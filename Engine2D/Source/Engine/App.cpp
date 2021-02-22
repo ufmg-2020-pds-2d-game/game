@@ -44,6 +44,8 @@ App::App() {
 	gravity = 9.8f;
 	drawDebugAABB = false;
 
+	camera = nullptr;
+
 	m_isRunning = false;
 
 	m_app = { 0 };
@@ -129,6 +131,11 @@ void App::PlayAudio(const std::string & name, float volume){
 void App::AddEntity(Entity* e) {
 	m_entities.emplace_back(e);
 
+	auto cam = e->Get<Camera2D>();
+	if (cam) {
+		camera = cam;
+	}
+
 	if (m_isRunning) {
 		e->Start();
 	}
@@ -185,6 +192,14 @@ void App::UpdatePhysics(){
 void App::Draw(){
 	gsi_camera2D(&m_gsi);
 
+	if (camera) {
+		auto pos = camera->GetPosition();
+		float zoom = camera->zoom;
+		
+		gsi_transf(&m_gsi, -pos.x, -pos.y, 0.f);
+		gsi_scalef(&m_gsi, zoom, zoom, 1.f);
+	}
+	
 	// Aqui iteramos sobre todas as entidades e, se elas tiverem
 	// o necessario para serem desenhadas na tela (Transform2D + 
 	// Image2D), desenhamos.

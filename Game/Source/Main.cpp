@@ -47,6 +47,7 @@ int main(int argc, char *argv[]) {
 
 		if (i == 0) {
 			a->Add(new PlayerComponent());
+			a->Add(new Camera2D());
 		}
 
 		app.AddEntity(a);

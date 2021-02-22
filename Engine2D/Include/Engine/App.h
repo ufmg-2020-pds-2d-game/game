@@ -11,6 +11,8 @@
 
 #include "Entity.h"
 
+class Camera2D;
+
 // Essa função vai chamar o PlaySound to App ativo.
 void PlayAudio(const std::string& name, float volume = 1.0f);
 
@@ -34,6 +36,8 @@ public:
 
 	float gravity;
 	bool drawDebugAABB;
+
+	Camera2D* camera;
 protected:
 	void UpdatePhysics();
 	void Draw();
