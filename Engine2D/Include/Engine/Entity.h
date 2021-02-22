@@ -21,7 +21,7 @@ public:
 
 	template <typename T>
 	T* New() {
-		return (T*)Add(new T());
+		return (T*)Add((Component*)new T());
 	}
 
 	template <typename T>
