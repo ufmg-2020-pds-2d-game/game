@@ -217,7 +217,61 @@ namespace Engine2DTest{
 			bool* calledUpdate = nullptr,	// Método Update()
 			bool* calledEnd = nullptr		// Método End()
 		) {
+			// Esse é um teste um pouco mais ROBUSTO.
+			//
+			// NOTA: Essa é uma função para auxiliar no teste.
+			// O teste em si (que basicamente apenas chama essa função variando
+			// os parâmetros) é realizado nos tres metodos implementados
+			// depois desse.
+			//
+			// Ele cria um mock, ver a classe "TestComponentVirtualMethods",
+			// implementada no arquivo "TestMocks.h" para os detalhes. Mas
+			// em poucas palavras:
+			//
+			// - SITUAÇÃO 1:
+			// Quando uma entidade é adicionada ao jogo, o metodo "Start"
+			// dessa entidade é chamado, que faz nada mais nada menos do que
+			// chamar o "Start" de todos os componentes dentro da entidade.
+			//
+			// - SITUAÇÃO 2:
+			// Quando uma entidade ESTÁ no jogo, TODOS OS FRAMES o metodo
+			// "Update" dessa entidade é chamado. Da mesma forma que o Start,
+			// ele apenas chama o "Update" dos componentes.
+			//
+			// - SITUAÇÃO 3:
+			// Quando uma entidade é removida ao jogo (ou o jogo termina), 
+			// o metodo "Start" dessa entidade é chamado, que é responsável por
+			// chamar o "Start" de todos os componentes dentro da entidade.
+			//
+			// Logo, para testar esses metodos, um Mock para um Componente foi
+			// criado, que define uma flag como true ao entrar em cada um desses
+			// metodos.
 
+			// Precisamos de uma instância do app...
+			App app;
+
+			// Vamos criar uma nova entidade e adicionar o mock
+			// do componente para fazer o teste.
+			auto ent = new Entity();
+
+			// Criamos o componente de teste...
+			auto testComponent = ent->New<TestComponentVirtualMethods>();
+
+			// Passamos os endereços (ponteiros) das booleanas 
+			// passadas como parâmetro nessa função.
+			testComponent->calledStart = calledStart;
+			testComponent->calledUpdate = calledUpdate;
+			testComponent->calledEnd = calledEnd;
+
+			// Finalmente, adicionamos essa entidade no jogo:
+			app.AddEntity(ent);
+
+			// Agora podemos executar o jogo por um frame:
+			app.forceQuit = true;
+			app.Run();
+
+			// Não é necessário deletar a entidade nem o componente,
+			// o app já faz isso.
 		}
 
 		TEST_METHOD(TestComponentStartCall) {
