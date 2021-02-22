@@ -23,6 +23,8 @@ void PlayerComponent::Update() {
 		t->scale.x = std::abs(t->scale.x);
 	}
 
+	t->rotation = std::sin(t->position.x * 0.02f) * 0.16f;
+
 	if (gs_platform_key_pressed(GS_KEYCODE_SPACE) || gs_platform_key_pressed(GS_KEYCODE_W)) {
 		PlayAudio("jump_s");
 		m_jumpForce = 50.f;
