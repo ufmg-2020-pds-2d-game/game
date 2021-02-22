@@ -17,7 +17,6 @@
 
 static void AppInit(){
 	App* app = gs_engine_user_data(App);
-	app->Start();
 }
 
 static void AppUpdate(){
@@ -112,6 +111,7 @@ void App::End(){
 
 void App::Run() {
 	m_isRunning = true;
+	Start();
 	m_engine->run();
 }
 
