@@ -16,6 +16,9 @@ class Camera2D;
 // Essa função vai chamar o PlaySound to App ativo.
 void PlayAudio(const std::string& name, float volume = 1.0f);
 
+// Retorna a instância principal do App
+App* GetApp();
+
 class App {
 public:
 	App();
@@ -37,7 +40,11 @@ public:
 	float gravity;
 	bool drawDebugAABB;
 
-	Camera2D* camera;
+	struct {
+		Vector position;
+		float zoom;
+		float rotation;
+	} camera;
 protected:
 	void UpdatePhysics();
 	void Draw();

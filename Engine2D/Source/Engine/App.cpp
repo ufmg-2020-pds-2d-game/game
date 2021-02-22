@@ -38,14 +38,21 @@ void PlayAudio(const std::string& name, float volume) {
 	app->PlayAudio(name, volume);
 }
 
+App* GetApp(){
+	App* app = gs_engine_user_data(App);
+	return app;
+}
+
 //---------------------------------------------------------------------------//
 
 App::App() {
 	gravity = 9.8f;
 	drawDebugAABB = false;
 
-	camera = nullptr;
-
+	camera.position = Vector(0.f, 0.f);
+	camera.zoom = 1.f;
+	camera.rotation = 0.f;
+	
 	m_isRunning = false;
 
 	m_app = { 0 };
@@ -130,12 +137,7 @@ void App::PlayAudio(const std::string & name, float volume){
 
 void App::AddEntity(Entity* e) {
 	m_entities.emplace_back(e);
-
-	auto cam = e->Get<Camera2D>();
-	if (cam) {
-		camera = cam;
-	}
-
+	
 	if (m_isRunning) {
 		e->Start();
 	}
@@ -192,12 +194,11 @@ void App::UpdatePhysics(){
 void App::Draw(){
 	gsi_camera2D(&m_gsi);
 
-	if (camera) {
-		auto pos = camera->GetPosition();
-		float zoom = camera->zoom;
-		
-		gsi_transf(&m_gsi, -pos.x, -pos.y, 0.f);
-		gsi_scalef(&m_gsi, zoom, zoom, 1.f);
+	// Atualizando a posição rotação e escala (zoom) da câmera.
+	{
+		gsi_transf(&m_gsi, camera.position.x, camera.position.y, 0.f);
+		gsi_rotatefv(&m_gsi, camera.rotation, GS_ZAXIS);
+		gsi_scalef(&m_gsi, camera.zoom, camera.zoom, camera.zoom);
 	}
 	
 	// Aqui iteramos sobre todas as entidades e, se elas tiverem

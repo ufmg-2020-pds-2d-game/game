@@ -2,8 +2,9 @@
 
 #include "Engine.h"
 
-Camera2D::Camera2D() {
+Camera2D::Camera2D(Vector camOffset) {
 	zoom = 1.f;
+	offset = camOffset;
 }
 
 Camera2D::~Camera2D() {
@@ -11,9 +12,20 @@ Camera2D::~Camera2D() {
 }
 
 Vector Camera2D::GetPosition(){
+	Vector pos;
+
 	auto t = GetEntity()->Get<Transform2D>();
 	if (t) {
-		return t->position;
+		pos = t->position;
 	}
-	return Vector(0.f, 0.f);
+	pos -= offset;
+
+	return pos * (-1);
+}
+
+void Camera2D::Update(){
+	App* app = GetApp();
+
+	app->camera.position = GetPosition();
+	app->camera.zoom = zoom;
 }
