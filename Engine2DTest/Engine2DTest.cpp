@@ -58,6 +58,45 @@ namespace Engine2DTest
 			Assert::AreEqual(v2.y, v1.y);
 		}        
 
+		/*=============================
+		Operadores de Matemática Básica
+		=============================*/
+
+		TEST_METHOD(TestOperatorPlus) {
+			// Testa a soma de dois vetores, exemplo:
+			// resultado = vetorA + vetorB
+			Vector result = Vector(1.f, 12.f) + Vector(9.f, 8.f);
+
+			Assert::AreEqual(result.x, 10.f);
+			Assert::AreEqual(result.y, 20.f);
+		}
+
+		TEST_METHOD(TestOperatorMinus) {
+			// Testa a subtração de dois vetores, exemplo:
+			// resultado = vetorA - vetorB
+			Vector result = Vector(5.f, 5.f) - Vector(10.f, 1.f);
+
+			Assert::AreEqual(result.x, -5.f);
+			Assert::AreEqual(result.y, 4.f);
+		}
+
+		TEST_METHOD(TestOperatorMultiply) {
+			// Testa a multiplicação de um vetor por um escalar, exemplo:
+			// resultado = vetorA * 2
+			Vector result = Vector(1.f, 1.f) * 2.f;
+
+			Assert::AreEqual(result.x, 2.f);
+			Assert::AreEqual(result.y, 2.f);
+		}
+
+		TEST_METHOD(TestOperatorDivide) {
+			// Testa a divisão de um vetor por um escalar, exemplo:
+			// resultado = vetorA / 2
+			Vector result = Vector(4.f, 4.f) / 2.f;
+
+			Assert::AreEqual(result.x, 2.f);
+			Assert::AreEqual(result.y, 2.f);
+		}
 	};
 
     // Testa a classe Entity
