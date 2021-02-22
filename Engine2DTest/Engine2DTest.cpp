@@ -309,6 +309,47 @@ namespace Engine2DTest{
 
 			Assert::IsTrue(calledEnd);
 		}
+
+		/*=====================================================
+		Testando o carregamento de arquivos (Texturas e Audios)
+		=====================================================*/
+
+		TEST_METHOD(AppLoadTextureSuccess) {
+			// Verifica se, ao carregar uma textura que EXISTE, a engine
+			// o faz sem problemas.
+			App app;
+
+			try {
+				app.LoadTexture("c_red", "./../Game/Data/character_roundRed.png");
+				Assert::IsTrue(true);
+			}
+			catch (std::exception e) {
+				Assert::Fail();
+			}
+
+			// É necessário rodar a engine, mesmo que por um frame. 
+			app.forceQuit = true;
+			app.Run();
+		}
+
+		TEST_METHOD(AppLoadTextureFailure) {
+			// Agora é o oposto: Se o usuário tentar carregar um arquivo que NÃO
+			// existe, o motor deve lançar uma excessão!
+			App app;
+
+			try {
+				app.LoadTexture("nop", "./Essa Textura Nao existe.png");
+				Assert::Fail((const wchar_t*)"O codigo não deveria chegar aqui!");
+			}
+			catch (std::exception e) {
+				// Identificou o erro e lançou a exceção!
+				Assert::IsTrue(true);
+			}
+
+			// É necessário rodar a engine, mesmo que por um frame. 
+			app.forceQuit = true;
+			app.Run();
+		}
 	};
 
     // Testa a classe Entity
