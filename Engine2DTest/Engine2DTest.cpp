@@ -4,10 +4,8 @@
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
-namespace Engine2DTest
-{
-	TEST_CLASS(VectorTest)
-	{
+namespace Engine2DTest{
+	TEST_CLASS(VectorTest){
 	public:
 		
 		/*====================
@@ -192,9 +190,31 @@ namespace Engine2DTest
 
 	};
 
+	TEST_CLASS(AppTests) {
+	public:
+		TEST_METHOD(AppDefaultValues) {
+			// Teste para verificar se o App é inicializado com 
+			// os valores padrões de forma adequada.
+			App app;
+
+			// Gravidade padrão
+			Assert::AreEqual(app.gravity, 9.8f);
+
+			// Valores padrões da câmera:
+			Assert::IsTrue(app.camera.position == Vector(0.f, 0.f));
+			Assert::AreEqual(app.camera.zoom, 1.f);
+			Assert::AreEqual(app.camera.rotation, 0.f);
+
+			// É necessário executar o jogo, mesmo que ele não faça nada.
+			// Mas já que é um teste unitário, ativamos essa flag forceQuit
+			// para que ele só seja executado por um frame e depois feche.
+			app.forceQuit = true;
+			app.Run();
+		}
+	};
+
     // Testa a classe Entity
-    TEST_CLASS(EntityTests) 
-    {
+    TEST_CLASS(EntityTests) {
     public:
         // Verifica se, ao tentar obter um componente
         // que não foi adicionado a entidade, o retorno
