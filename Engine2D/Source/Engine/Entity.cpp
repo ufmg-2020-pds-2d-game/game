@@ -3,6 +3,8 @@
 #include "Engine/App.h"
 #include "Engine/Component.h"
 
+#include "Engine.h"
+
 Entity::Entity() {
 	m_started = false;
 }
@@ -32,6 +34,24 @@ void Entity::End(){
 		c->End();
 	}
 	m_started = false;
+}
+
+Entity * Entity::Factory(const std::string& image, FactoryType t){
+	Entity* ent = new Entity();
+
+	ent->Add(new Transform2D({ 0.f, 0.f }, {100.f, 100.f}));
+	if (image != "") {
+		ent->Add(new Image2D(image));
+	}
+
+	if (t != Entity::NO_COLLISION) {
+		ent->Add(new BoxCollider2D());
+	}
+	if (t == Entity::DYNAMIC) {
+		ent->Add(new RigidBody2D());
+	}
+
+	return ent;
 }
 
 Component * Entity::Add(Component * c){

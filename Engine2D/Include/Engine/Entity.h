@@ -17,6 +17,14 @@ public:
 	void Update();
 	void End();
 
+	enum FactoryType {
+		NO_COLLISION,
+		STATIC,
+		DYNAMIC
+	};
+
+	static Entity* Factory(const std::string& image, FactoryType t=STATIC);
+
 	Component* Add(Component* c);
 
 	template <typename T>
