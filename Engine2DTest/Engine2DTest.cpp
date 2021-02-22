@@ -9,14 +9,7 @@ namespace Engine2DTest
 	TEST_CLASS(VectorTest)
 	{
 	public:
-
-		TEST_METHOD(TestLength)
-		{
-			Vector vec(2.0, 3.0);
-			Assert::AreEqual(vec.Length(), sqrt(13.0f));
-		}
-
-
+		
 		/*====================
 		Construtores da Classe
 		====================*/
@@ -56,7 +49,7 @@ namespace Engine2DTest
 
 			Assert::AreEqual(v2.x, v1.x);
 			Assert::AreEqual(v2.y, v1.y);
-		}
+		}        
 
 		/*=============================
 		Operadores de Matemática Básica
@@ -109,7 +102,7 @@ namespace Engine2DTest
 
 			Assert::AreEqual(result, true);
 		}
-
+				
 		/*====================================
 		Assignment Operators (+=, -=, *= e /=)
 		====================================*/
@@ -117,7 +110,7 @@ namespace Engine2DTest
 		TEST_METHOD(TestAssignmentOperatorPlus) {
 			// Testa a soma de dois vetores, exemplo:
 			// vetorA += vetorB
-			Vector result = Vector(1.f, 2.f);
+			Vector result = Vector(1.f, 2.f); 
 			result += Vector(9.f, 8.f);
 
 			Assert::AreEqual(result.x, 10.f);
@@ -154,42 +147,85 @@ namespace Engine2DTest
 			Assert::AreEqual(result.y, 2.f);
 		}
 
+		
+		/*===============================
+		Métodos Diversos da classe Vector
+		===============================*/
+
+		TEST_METHOD(TestLength)	{
+			// O length (comprimento do vetor) retorna a
+			// hipotenusa h do vetor {X, Y} utilizando a fórmula de pitágoras: 
+			//   |\		 | 
+			//  x| \ h   |       ________
+			//   |  \    |  h = V x² + y²
+			//   |___\   | 
+			//     y     | 
+
+			Vector vec(2.0, 3.0);
+
+			// Raiz quadrada de 13 porque 2 ao quadrado mais 3 ao quadrado é 13.
+			Assert::AreEqual(vec.Length(), sqrt(13.0f));
+		}
+
+		TEST_METHOD(TestNormalize) {
+			// O Método Normalize() serve para normalizar o vetor.
+			// Um vetor normal é aquele que o seu comprimento é igual a 1.f!
+			Vector vec(2.0, 3.0);
+
+			// Esse é o método sendo testado:
+			vec.Normalize();
+
+			Assert::AreEqual(vec.Length(), 1.f);
+		}
+
+		TEST_METHOD(TestNormalized) {
+			// Mesma utilidade do método anterior, a diferença é que ao invés
+			// de normalizar o próprio vetor, esse método retorna uma cópia
+			// normalizada do vetor em questão.
+			Vector vec(2.0, 3.0);
+
+			// Esse é o método sendo testado:
+			Vector normalizedVec = vec.Normalized();
+
+			Assert::AreEqual(normalizedVec.Length(), 1.f);
+		}
+
 	};
 
-	// Testa a classe Entity
-	TEST_CLASS(EntityTests)
-	{
-	public:
-		// Verifica se, ao tentar obter um componente
-		// que não foi adicionado a entidade, o retorno
-		// é de fato nullptr.
-		TEST_METHOD(TestGetComponentInvalid) {
-			Entity entity;
+    // Testa a classe Entity
+    TEST_CLASS(EntityTests) 
+    {
+    public:
+        // Verifica se, ao tentar obter um componente
+        // que não foi adicionado a entidade, o retorno
+        // é de fato nullptr.
+        TEST_METHOD(TestGetComponentInvalid) {
+            Entity entity;
 
-			Component* t = entity.Get<Transform2D>();
+            Component* t = entity.Get<Transform2D>();
 
-			Assert::IsTrue(t == nullptr);
-		}
+            Assert::IsTrue(t == nullptr);
+        }
 
-		// Testa a capacidade de adicionar e obter de
-		// volta um componente a uma entidade.
-		TEST_METHOD(TestAddAndGetComponent) {
-			Entity entity;
-			entity.Add(new Transform2D());
+        // Testa a capacidade de adicionar e obter de
+        // volta um componente a uma entidade.
+        TEST_METHOD(TestAddAndGetComponent) {
+            Entity entity;
+            entity.Add(new Transform2D());
 
-			Component* t = entity.Get< Transform2D>();
+            Component* t = entity.Get< Transform2D>();
 
-			Assert::IsTrue(t != nullptr);
-		}
+            Assert::IsTrue(t != nullptr);
+        }
 
-		// Testa a criação de um novo componente usando
-		// o método da entidade.
-		TEST_METHOD(TestNewComponent) {
-			Entity entity;
+        // Testa a criação de um novo componente usando
+        // o método da entidade.
+        TEST_METHOD(TestNewComponent) {
+            Entity entity;
 
-			auto t = entity.New<Transform2D>();
+            auto t = entity.New<Transform2D>();
 
-			Assert::IsTrue(t != nullptr);
-		}
-	};
+            Assert::IsTrue(t != nullptr);
+        }
+    };
 }
