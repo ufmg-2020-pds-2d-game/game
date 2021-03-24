@@ -5,7 +5,9 @@
 
 #include "Engine\Math\Vector.h"
 
-class Component;
+#include "Component.h"
+
+//class Component;
 class App;
 
 class Entity {

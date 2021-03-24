@@ -10,5 +10,4 @@
 #include "Engine/Components/BoxCollider2D.h"
 #include "Engine/Components/RigidBody2D.h"
 #include "Engine/Components/Camera2D.h"
-
-#include "Engine/Components/PlayerComponent.h"
+#include "Engine/Components/Text.h"
