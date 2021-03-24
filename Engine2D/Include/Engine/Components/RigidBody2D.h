@@ -11,6 +11,8 @@ class RigidBody2D : public Component {
 public:
 	RigidBody2D();
 	virtual ~RigidBody2D();
+
+	Entity* lastCollision;
 };
 
 #endif //!RIGID_BODY_2D_COMPONENT_H

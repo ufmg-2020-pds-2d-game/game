@@ -188,6 +188,7 @@ void App::UpdatePhysics(){
 		RigidBody2D* body = e->Get<RigidBody2D>();
 
 		if (transform && body) {
+			body->lastCollision = nullptr;
 			transform->position.y += gravity;
 
 			BoxCollider2D* collider = e->Get<BoxCollider2D>();
@@ -213,6 +214,8 @@ void App::UpdatePhysics(){
 					// (Ambos fornecidos pelo framework gunslinger)
 
 					if (gs_aabb_vs_aabb(&a, &b)) {
+						body->lastCollision = other;
+
 						gs_vec2 disp = gs_aabb_aabb_mtv(&a, &b);
 
 						transform->position.x += disp.x;
