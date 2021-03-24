@@ -116,6 +116,23 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+	// As Moedas...
+	for (int i = 0; i < 5; i++) {
+		if (std::rand() % 100 < 60) {
+			Entity* a = new Entity();
+
+			a->Add(new Transform2D(
+				{ 2000.f + 600.f * i, 100.f + 50.f * (std::rand() % 10) },
+				{ 300.f, 300.f }
+			));
+			a->Add(new Image2D("coin"));
+			a->Add(new BoxCollider2D(0.2f, 0.2f));
+			a->Add(new Slider(true));
+
+			app.AddEntity(a);
+		}
+	}
+
 	app.Run();
 	return 0;
 }

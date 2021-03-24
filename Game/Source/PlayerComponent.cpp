@@ -1,6 +1,10 @@
 #include "PlayerComponent.h"
 
+#include <iostream>
+
 #include "Engine.h"
+#include "Slider.h"
+
 
 PlayerComponent::PlayerComponent() {
 	m_jumpForce = 0.f;
@@ -30,4 +34,11 @@ void PlayerComponent::Update() {
 		t->position.y -= m_jumpForce;
 		m_jumpForce -= 450.f * gs_platform_delta_time();
 	}
+
+	SpawnCoins();
+}
+
+void PlayerComponent::SpawnCoins() {
+	static int timer = 0;
+	timer += 1;
 }

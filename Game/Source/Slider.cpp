@@ -28,4 +28,6 @@ void Slider::Update() {
 			}
 		}
 	}
+
+	App* app = GetApp();
 }
