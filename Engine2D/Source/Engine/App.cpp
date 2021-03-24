@@ -58,7 +58,9 @@ App::App() {
 
 	m_app = { 0 };
 	m_app.window_title = "Game";
-
+	m_app.window_height = 720;
+	m_app.window_width  = 1280;
+	
 	// Já que o Gunslinger é um framework em C, ele não aceita 
 	// ponteiros para funções pertencentes a classes (métodos). 
 	// Então essas três funções internas e estáticas foram criados 
@@ -69,10 +71,9 @@ App::App() {
 	m_app.user_data = (void*)this;
 
 	m_engine = gs_engine_create(m_app);
-
+	
 	m_gcb = gs_command_buffer_new();
 	m_gsi = gs_immediate_draw_new();
-	m_gsa = gs_asset_manager_new();
 }
 
 App::~App() {
@@ -80,10 +81,15 @@ App::~App() {
 		delete e;
 	}
 	m_entities.clear();
-	m_assetTable.clear();
+	//m_assetTable.clear();
+
+	m_textures.clear();
+	m_audios.clear();
 }
 
 void App::Start(){
+	m_isRunning = true;
+
 	for (auto e : m_entities) {
 		e->Start();
 	}
@@ -110,15 +116,24 @@ void App::End(){
 
 
 void App::Run() {
-	m_isRunning = true;
+	//*
 	Start();
-	m_engine->run();
+
+	//m_engine->run();
+#ifdef GS_PLATFORM_IMPL_EMSCRIPTEN
+	emscripten_set_main_loop(gs_engine_frame, (int32_t)m_app.frame_rate, true);
+#else
+	while (gs_engine_app()->is_running) {
+		gs_engine_frame();
+	}
+#endif
+	//*/
 }
 
 void App::LoadTexture(const std::string& name, const std::string& path) {
 	// Antes de mais nada, vamos ver se o arquivo existe!
 	if (!gs_platform_file_exists(path.c_str())) {
-		throw std::exception("Load Texture Error: File doesn't exist!");
+		//throw std::exception("Load Texture Error: File doesn't exist!");
 	}
 
 	gs_asset_texture_t tex0 = { 0 };
@@ -129,24 +144,28 @@ void App::LoadTexture(const std::string& name, const std::string& path) {
 	tex0.desc.min_filter = GS_GRAPHICS_TEXTURE_FILTER_LINEAR;
 	tex0.desc.mag_filter = GS_GRAPHICS_TEXTURE_FILTER_LINEAR;
 
+	tex0.desc.wrap_s = GS_GRAPHICS_TEXTURE_WRAP_REPEAT;
+	tex0.desc.wrap_t = GS_GRAPHICS_TEXTURE_WRAP_REPEAT;
+
 	gs_asset_texture_load_from_file(path.c_str(), &tex0, NULL, false, false);
 
-	m_assetTable[name] = gs_assets_create_asset(&m_gsa, gs_asset_texture_t, &tex0);
+	m_textures[name] = tex0;
 }
 
 void App::LoadAudio(const std::string& name, const std::string& path) {
 	// Antes de mais nada, vamos ver se o arquivo existe!
 	if (!gs_platform_file_exists(path.c_str())) {
-		throw std::exception("Load Audio Error: File doesn't exist!");
+		//throw std::exception("Load Audio Error: File doesn't exist!");
 	}
 
-	m_assetTable[name] = gs_assets_load_from_file(&m_gsa, gs_asset_audio_t, path.c_str());
+	gs_asset_audio_t aud0;
+	gs_asset_audio_load_from_file(path.c_str(), &aud0);
+
+	m_audios[name] = aud0;
 }
 
 void App::PlayAudio(const std::string & name, float volume){
-	gs_asset_audio_t* ap = gs_assets_getp(&m_gsa, gs_asset_audio_t, m_assetTable[name]);
-
-	gs_audio_play_source(ap->hndl, volume);
+	gs_audio_play_source(m_audios[name].hndl, volume);
 }
 
 void App::AddEntity(Entity* e) {
@@ -237,8 +256,8 @@ void App::Draw(){
 			
 			// Aqui obtemos a textura informada no Image2D e passamos
 			// ela para ser utilizada.
-			auto texture = gs_assets_getp(&m_gsa, gs_asset_texture_t, m_assetTable[image->imageName]);
-			gsi_texture(&m_gsi, texture->hndl);
+			auto texture = m_textures[image->imageName];
+			gsi_texture(&m_gsi, texture.hndl);
 
 			// Finalmente, renderizamos um quadrado, que irá utilizar a
 			// textura e o transform enviado anteriormente.
@@ -265,10 +284,24 @@ void App::Draw(){
 		}
 	}
 
+	for (auto e : m_entities) {
+		Text* text = e->Get<Text>();
+
+		if (text) {
+			gsi_text(
+				&m_gsi,
+				text->position.x, text->position.y,
+				text->text.c_str(),
+				NULL, false,
+				255, 255, 255, 255
+			);
+		}
+	}
+
 	// Aqui enviamos as isntruções de render para serem desenhadas.
 	// A cor passada no terceiro parâmetro dessa função representa
 	// a cor de fundo da tela.
-	//gsi_render_pass_submit(&m_gsi, &m_gcb, gs_color(51, 153, 218, 255));
-	gsi_render_pass_submit(&m_gsi, &m_gcb, gs_color(236, 236, 236, 255));
+	gsi_render_pass_submit(&m_gsi, &m_gcb, gs_color(51, 153, 218, 255));
+	//gsi_render_pass_submit(&m_gsi, &m_gcb, gs_color(236, 236, 236, 255));
 	gs_graphics_submit_command_buffer(&m_gcb);
 }
