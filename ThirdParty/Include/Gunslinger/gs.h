@@ -142,8 +142,11 @@
 
         int32_t main(int32_t argv, char** argc)
         {
-            gs_app_desc_t app = {0};        // Fill this with whatever your app needs
-            gs_engine_create(app)->run();   // Create instance of engine for framework and run
+            gs_app_desc_t app = {0}; // Fill this with whatever your app needs
+            gs_engine_create(app);   // Create instance of engine for framework and run
+            while (gs_engine_app()->is_running) {
+                gs_engine_frame();
+            }
             return 0;
        }
 
@@ -152,7 +155,7 @@
         Internally, gunslinger does its best to handle the boiler plate drudge work of implementing (in correct order) 
         the various layers required for a basic hardware accelerated multi-media application program to work. This involves allocating 
         memory for internal data structures for these layers as well initializing them in a particular order so they can inter-operate
-        as expected. If you're interested in taking care of this yourself, look at the `gs_engine_run()` function to get a feeling
+        as expected. If you're interested in taking care of this yourself, look at the `gs_engine_frame()` function to get a feeling
         for how this is being handled.
 
     GS_MATH:
@@ -473,9 +476,9 @@
 
 /*===== Gunslinger Include ======*/
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// #ifdef __cplusplus
+// extern "C" {
+// #endif
 
 /*========================
 // Defines
@@ -531,6 +534,45 @@ extern "C" {
    #define GS_API_DECL   extern
 #endif
 
+/*===================
+// PLATFORM DEFINES
+===================*/
+
+/* Platform Android */
+#if (defined __ANDROID__)
+
+    #define GS_PLATFORM_ANDROID
+
+/* Platform Apple */
+#elif (defined __APPLE__ || defined _APPLE)
+
+    #define GS_PLATFORM_APPLE
+
+/* Platform Windows */
+#elif (defined _WIN32 || defined _WIN64)
+
+    // Necessary windows defines before including windows.h, because it's retarded.
+    #define OEMRESOURCE
+
+    #define GS_PLATFORM_WIN
+    #include <windows.h>
+
+    #define WIN32_LEAN_AND_MEAN
+
+/* Platform Linux */
+#elif (defined linux || defined _linux || defined __linux__)
+
+    #define GS_PLATFORM_LINUX
+
+/* Platform Emscripten */
+#elif (defined __EMSCRIPTEN__)
+
+    #define GS_PLATFORM_WEB
+
+/* Else - Platform Undefined and Unsupported or custom */
+
+#endif
+
 /*============================================================
 // C primitive types
 ============================================================*/
@@ -543,7 +585,9 @@ extern "C" {
 #ifdef __cplusplus
         typedef bool      b8;
 #else
+    #ifndef __bool_true_false_are_defined
         typedef _Bool     bool;
+    #endif
         typedef bool      b8;
 #endif
 
@@ -633,7 +677,7 @@ typedef bool32_t          bool32;
         }\
     } while (0)
 
-#define gs_int_2_voidp(I) (void*)(uintptr_t)(I)
+#define gs_int2voidp(I) (void*)(uintptr_t)(I)
 
 /*===================================
 // Memory Allocation Utils
@@ -709,6 +753,9 @@ typedef enum gs_result
 
 #define gs_handle_create(__TYPE, __ID)\
     gs_handle_create_##__TYPE(__ID)
+
+#define gs_handle_is_valid(HNDL)\
+    ((HNDL.id) != UINT32_MAX)
 
 /*===================================
 // Color
@@ -904,7 +951,7 @@ char* gs_read_file_contents_into_string_null_term
             fread(buffer, 1, sz, fp);
         }
         fclose(fp);
-        buffer[sz] = '0';
+        buffer[sz] = '\0';
         if (_sz) *_sz = sz;
     }
     return buffer;
@@ -960,11 +1007,19 @@ void gs_util_get_dir_from_file
 {
     uint32_t str_len = gs_string_length(file_path);
     const char* end = (file_path + str_len);
-    while (*end != '/' && end != file_path)
+    for (uint32_t i = 0; i < str_len; ++i)
     {
-        end--;
+        if (file_path[i] == '/' || file_path[i] == '\\')
+        {
+            end = &file_path[i];
+        }
     }
-    memcpy(buffer, file_path, gs_min(buffer_size, (end - file_path) + 1));
+
+    size_t dir_len = end - file_path;
+    memcpy(buffer, file_path, gs_min(buffer_size, dir_len + 1));
+    if (dir_len + 1 <= buffer_size) {
+        buffer[dir_len] = '\0';
+    }
 }
 
 gs_force_inline 
@@ -976,18 +1031,25 @@ void gs_util_get_file_name
 )
 {
     uint32_t str_len = gs_string_length(file_path);
-    const char* end = (file_path + str_len);
-    const char* dot_at = end;
-    while (*end != '.' && end != file_path)
+    const char* file_start = file_path;
+    const char* file_end = (file_path + str_len);
+    for (uint32_t i = 0; i < str_len; ++i)
     {
-        end--;
+        if (file_path[i] == '/' || file_path[i] == '\\')
+        {
+            file_start = &file_path[i + 1];
+        }
+        else if (file_path[i] == '.')
+        {
+            file_end = &file_path[i];
+        }
     }
-    const char* start = end; 
-    while (*start != '/' && start != file_path)
-    {
-        start--;
+
+    size_t dir_len = file_end - file_start;
+    memcpy(buffer, file_start, gs_min(buffer_size, dir_len + 1));
+    if (dir_len + 1 <= buffer_size) {
+        buffer[dir_len] = '\0';
     }
-    memcpy(buffer, start, (end - start));
 }
 
 gs_force_inline 
@@ -1076,42 +1138,57 @@ void gs_util_normalize_path
     // Normalize the path somehow...
 }
 
-#ifdef __MINGW32__
-    #define gs_printf(__FMT, ...) __mingw_printf(__FMT, ##__VA_ARGS__)
-#else
-    gs_force_inline void 
-    gs_printf
-    (
-        const char* fmt,
-        ... 
-    )
-    {
-        va_list args;
-        va_start (args, fmt);
-        vprintf(fmt, args);
-        va_end(args);
-    }
+// Custom printf defines
+#ifndef gs_printf
+
+    #ifdef __MINGW32__
+
+        #define gs_printf(__FMT, ...) __mingw_printf(__FMT, ##__VA_ARGS__)
+
+    #elif (defined GS_PLATFORM_ANDROID)
+
+        #include <android/log.h>
+
+        #define gs_printf(__FMT, ...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __FMT, ## __VA_ARGS__))
+
+    #else
+        gs_force_inline void
+        gs_printf
+        (
+            const char* fmt,
+            ...
+        )
+        {
+            va_list args;
+            va_start (args, fmt);
+            vprintf(fmt, args);
+            va_end(args);
+        }
+    #endif
+
 #endif
 
 #define gs_println(__FMT, ...)\
     do {\
-        gs_printf(__FMT, ##__VA_ARGS__);\
+        gs_printf(__FMT, ## __VA_ARGS__);\
         gs_printf("\n");\
     } while (0)
 
-gs_force_inline 
-void gs_fprintf
-(
-    FILE* fp, 
-    const char* fmt, 
-    ... 
-)
-{
-    va_list args;
-    va_start (args, fmt);
-    vfprintf(fp, fmt, args);
-    va_end(args);
-}
+#ifndef gs_fprintf
+    gs_force_inline
+    void gs_fprintf
+    (
+        FILE* fp,
+        const char* fmt,
+        ...
+    )
+    {
+        va_list args;
+        va_start (args, fmt);
+        vfprintf(fp, fmt, args);
+        va_end(args);
+    }
+#endif
 
 gs_force_inline 
 void gs_fprintln
@@ -1148,7 +1225,8 @@ void gs_snprintf
 #endif
 
 #define gs_transient_buffer(__N, __SZ)\
-    (char __N[__SZ], memset(__N, 0, __SZ))
+    char __N[__SZ] = gs_default_val();\
+    memset(__N, 0, __SZ);
 
 #define gs_snprintfc(__NAME, __SZ, __FMT, ...)\
     char __NAME[__SZ] = gs_default_val();\
@@ -1305,7 +1383,7 @@ gs_force_inline
 size_t gs_hash_bytes(void *p, size_t len, size_t seed)
 {
 #if 0
-  return gs_hash_table_siphash_bytes(p,len,seed);
+  return gs_hash_siphash_bytes(p,len,seed);
 #else
   unsigned char *d = (unsigned char *) p;
 
@@ -1351,6 +1429,7 @@ size_t gs_hash_bytes(void *p, size_t len, size_t seed)
 
 /* Resource Loading Util */
 GS_API_DECL bool32_t gs_util_load_texture_data_from_file(const char* file_path, int32_t* width, int32_t* height, uint32_t* num_comps, void** data, bool32_t flip_vertically_on_load);
+GS_API_DECL bool32_t gs_util_load_texture_data_from_memory(const void* memory, size_t sz, int32_t* width, int32_t* height, uint32_t* num_comps, void** data, bool32_t flip_vertically_on_load);
 
 /*========================
 // GS_CONTAINERS
@@ -1451,6 +1530,9 @@ GS_API_DECL gs_result gs_byte_buffer_write_to_file(gs_byte_buffer_t* buffer, con
 
 /* Desc */
 GS_API_DECL gs_result gs_byte_buffer_read_from_file(gs_byte_buffer_t* buffer, const char* file_path);   // Assumes an allocated byte buffer
+
+/* Desc */
+GS_API_DECL void gs_byte_buffer_memset(gs_byte_buffer_t* buffer, uint8_t val);
 
 /*===================================
 // Dynamic Array
@@ -1818,42 +1900,36 @@ uint32_t gs_hash_table_get_key_index_func(void** data, void* key, size_t key_len
 typedef uint32_t gs_hash_table_iter;
 
 gs_force_inline
-uint32_t __gs_find_first_valid_iterator(void* data, size_t key_len, size_t val_len, uint32_t idx)
+uint32_t __gs_find_first_valid_iterator(void* data, size_t key_len, size_t val_len, uint32_t idx, size_t stride, size_t klpvl)
 {
-    size_t it = (size_t)idx;
-    size_t s = key_len == 8 ? 7 : 3;
-    size_t entry_sz = (((key_len + val_len + sizeof(gs_hash_table_entry_state)) + s) & (~s));   // 4-byte aligned stride
-    size_t klpvl = ((key_len + val_len + s) & (~s));    // 4-byte aligned key/val pair
+    uint32_t it = (uint32_t)idx;
     for (; it < (uint32_t)gs_dyn_array_capacity(data); ++it)
     {
-        size_t offset = (it * entry_sz);
+        size_t offset = (it * stride);
         gs_hash_table_entry_state state = *(gs_hash_table_entry_state*)((uint8_t*)data + offset + (klpvl));
         if (state == GS_HASH_TABLE_ENTRY_ACTIVE)
         {
             break;
         }
     }
-    return (uint32_t)it;
+    return it;
 }
 
 /* Find first valid iterator idx */
 #define gs_hash_table_iter_new(__HT)\
-    (__gs_find_first_valid_iterator((__HT)->data, sizeof((__HT)->tmp_key), sizeof((__HT)->tmp_val), 0))
+    (__gs_find_first_valid_iterator((__HT)->data, sizeof((__HT)->tmp_key), sizeof((__HT)->tmp_val), 0, (__HT)->stride, (__HT)->klpvl))
 
 #define gs_hash_table_iter_valid(__HT, __IT)\
     ((__IT) < gs_hash_table_capacity((__HT)))
 
 // Have to be able to do this for hash table...
 gs_force_inline
-void __gs_hash_table_iter_advance_func(void** data, size_t key_len, size_t val_len, uint32_t* it)
+void __gs_hash_table_iter_advance_func(void** data, size_t key_len, size_t val_len, uint32_t* it, size_t stride, size_t klpvl)
 {
-    size_t s = key_len == 8 ? 7 : 3;    // NO idea if this is a valid way to handle this.
-    size_t entry_sz = (((key_len + val_len + sizeof(gs_hash_table_entry_state)) + s) & (~s));   // Byte aligned stride
-    size_t klpvl = ((key_len + val_len + s) & (~s));    // Byte aligned key/val pair 
     (*it)++;
     for (; *it < (uint32_t)gs_dyn_array_capacity(*data); ++*it)
     {
-        size_t offset = (size_t)(*it * entry_sz);
+        size_t offset = (size_t)(*it * stride);
         gs_hash_table_entry_state state = *(gs_hash_table_entry_state*)((uint8_t*)*data + offset + (klpvl));
         if (state == GS_HASH_TABLE_ENTRY_ACTIVE)
         {
@@ -1863,10 +1939,10 @@ void __gs_hash_table_iter_advance_func(void** data, size_t key_len, size_t val_l
 }
 
 #define gs_hash_table_find_valid_iter(__HT, __IT)\
-    ((__IT) = __gs_find_first_valid_iterator((void**)&(__HT)->data, sizeof((__HT)->tmp_key), sizeof((__HT)->tmp_val), (__IT)))
+    ((__IT) = __gs_find_first_valid_iterator((void**)&(__HT)->data, sizeof((__HT)->tmp_key), sizeof((__HT)->tmp_val), (__IT), (__HT)->stride, (__HT)->klpvl))
 
 #define gs_hash_table_iter_advance(__HT, __IT)\
-    (__gs_hash_table_iter_advance_func((void**)&(__HT)->data, sizeof((__HT)->tmp_key), sizeof((__HT)->tmp_val), &(__IT)))
+    (__gs_hash_table_iter_advance_func((void**)&(__HT)->data, sizeof((__HT)->tmp_key), sizeof((__HT)->tmp_val), &(__IT), (__HT)->stride, (__HT)->klpvl))
 
 #define gs_hash_table_iter_get(__HT, __IT)\
     gs_hash_table_geti(__HT, __IT)
@@ -1874,10 +1950,10 @@ void __gs_hash_table_iter_advance_func(void** data, size_t key_len, size_t val_l
 #define gs_hash_table_iter_getp(__HT, __IT)\
     (&(gs_hash_table_geti(__HT, __IT)))
 
-#define gs_hash_table_iter_get_key(__HT, __IT)\
+#define gs_hash_table_iter_getk(__HT, __IT)\
     (gs_hash_table_getk(__HT, __IT))
 
-#define gs_hash_table_iter_get_keyp(__HT, __IT)\
+#define gs_hash_table_iter_getkp(__HT, __IT)\
     (&(gs_hash_table_getk(__HT, __IT)))
 
 /*===================================
@@ -1969,6 +2045,13 @@ uint32_t gs_slot_array_insert_func(void** indices, void** data, void* val, size_
     return idx;
 }
 
+#define gs_slot_array_reserve(__SA, __NUM)\
+    do {\
+        gs_slot_array_init_all(__SA);\
+        gs_dyn_array_reserve((__SA)->data, __NUM);\
+        gs_dyn_array_reserve((__SA)->indices, __NUM);\
+    } while (0)
+
 #define gs_slot_array_insert(__SA, __VAL)\
     (gs_slot_array_init_all(__SA), (__SA)->tmp = (__VAL),\
         gs_slot_array_insert_func((void**)&((__SA)->indices), (void**)&((__SA)->data), (void*)&((__SA)->tmp), sizeof(((__SA)->tmp)), NULL))
@@ -2017,7 +2100,7 @@ uint32_t gs_slot_array_insert_func(void** indices, void** data, void* val, size_
 
  #define gs_slot_array_erase(__SA, __id)\
     do {\
-        uint32_t __H0 = (__id) % gs_dyn_array_size((__SA)->indices);\
+        uint32_t __H0 = (__id) /*% gs_dyn_array_size((__SA)->indices)*/;\
         if (gs_slot_array_size(__SA) == 1) {\
             gs_slot_array_clear(__SA);\
         }\
@@ -2051,6 +2134,8 @@ uint32_t gs_slot_array_insert_func(void** indices, void** data, void* val, size_
 
 // Slot array iterator new
 typedef uint32_t gs_slot_array_iter;
+
+#define gs_slot_array_iter_new(__SA) 0
 
 #define gs_slot_array_iter_valid(__SA, __IT)\
     ((__IT) < (uint32_t)gs_slot_array_size((__SA)))
@@ -2105,8 +2190,8 @@ void** gs_slot_map_init(void** sm)
 #define gs_slot_map_insert(__SM, __SMK, __SMV)\
     do {\
         gs_slot_map_init(&(__SM));\
-        uint32_t __h = gs_slot_array_insert((__SM)->sa, ((__SMV)));\
-        gs_hash_table_insert((__SM)->ht, (__SMK), __h);\
+        uint32_t __H = gs_slot_array_insert((__SM)->sa, ((__SMV)));\
+        gs_hash_table_insert((__SM)->ht, (__SMK), __H);\
     } while (0)
 
 #define gs_slot_map_get(__SM, __SMK)\
@@ -2143,6 +2228,9 @@ void** gs_slot_map_init(void** sm)
         }\
     } while (0)
 
+#define gs_slot_map_capacity(__SM)\
+    (gs_hash_table_capacity((__SM)->ht))
+
 /*=== Slot Map Iterator ===*/
 
 typedef uint32_t gs_slot_map_iter;
@@ -2151,25 +2239,29 @@ typedef uint32_t gs_slot_map_iter;
 #define gs_slot_map_iter_new(__SM)\
     gs_hash_table_iter_new((__SM)->ht)
 
-#define gs_slot_map_iter_valid(__SM, __it)\
-    ((__it) < gs_hash_table_capacity((__SM)->ht))
+#define gs_slot_map_iter_valid(__SM, __IT)\
+    ((__IT) < gs_hash_table_capacity((__SM)->ht))
 
-#define gs_slot_map_iter_advance(__SM, __it)\
-    __gs_hash_table_iter_advance_func((__SM)->ht->data, sizeof((__SM)->ht->tmp_key), sizeof((__SM)->ht->tmp_val), &(__it))
+#define gs_slot_map_iter_advance(__SM, __IT)\
+    __gs_hash_table_iter_advance_func((void**)&((__SM)->ht->data), sizeof((__SM)->ht->tmp_key), sizeof((__SM)->ht->tmp_val), &(__IT), (__SM)->ht->stride, (__SM)->ht->klpvl)
 
-#define gs_slot_map_iter_getk(__SM, __it)\
-    (gs_hash_table_find_valid_iter(__SM->ht, __it), gs_hash_table_geti((__SM)->ht, (__it)))
+#define gs_slot_map_iter_getk(__SM, __IT)\
+    gs_hash_table_iter_getk((__SM)->ht, (__IT))
+    //(gs_hash_table_find_valid_iter(__SM->ht, __IT), gs_hash_table_geti((__SM)->ht, (__IT)))
 
-#define gs_slot_map_iter_getkp(__SM, __it)\
-    (gs_hash_table_find_valid_iter(__SM->ht, __it), &(gs_hash_table_geti((__SM)->ht, (__it))))
+#define gs_slot_map_iter_getkp(__SM, __IT)\
+    (gs_hash_table_find_valid_iter(__SM->ht, __IT), &(gs_hash_table_geti((__SM)->ht, (__IT))))
 
-#define gs_slot_map_iter_getv(__SM, __it)\
-    (gs_hash_table_find_valid_iter(__SM->ht, __it), (__SM)->sa->data[gs_hash_table_geti((__SM)->ht, (__it))])
+#define gs_slot_map_iter_get(__SM, __IT)\
+    ((__SM)->sa->data[gs_hash_table_iter_get((__SM)->ht, (__IT))])
 
-#define gs_slot_map_iter_getvp(__SM, __it)\
-    (gs_hash_table_find_valid_iter(__SM->ht, __it), &((__SM)->sa->data[gs_hash_table_geti((__SM)->ht, (__it))]))
+    // ((__SM)->sa->data[gs_hash_table_geti((__SM)->ht, (__IT))])
+    // (gs_hash_table_find_valid_iter(__SM->ht, __IT), (__SM)->sa->data[gs_hash_table_geti((__SM)->ht, (__IT))])
 
-typedef uint32_t gs_slot_map_iter;
+#define gs_slot_map_iter_getp(__SM, __IT)\
+    (&((__SM)->sa->data[gs_hash_table_geti((__SM)->ht, (__IT))]))
+
+    // (gs_hash_table_find_valid_iter(__SM->ht, __IT), &((__SM)->sa->data[gs_hash_table_geti((__SM)->ht, (__IT))]))
 
 /*===================================
 // Command Buffer
@@ -2224,6 +2316,7 @@ void gs_command_buffer_free(gs_command_buffer_t* cb)
 #define gs_v2(...)  gs_vec2_ctor(__VA_ARGS__)
 #define gs_v3(...)  gs_vec3_ctor(__VA_ARGS__)
 #define gs_v4(...)  gs_vec4_ctor(__VA_ARGS__)
+#define gs_quat(...) gs_quat_ctor(__VA_ARGS__)
 
 #define gs_v2s(__S)  gs_vec2_ctor((__S), (__S))
 #define gs_v3s(__S)  gs_vec3_ctor((__S), (__S), (__S))
@@ -2240,7 +2333,7 @@ void gs_command_buffer_free(gs_command_buffer_t* cb)
 ================================================================================*/
 
 #define gs_rad2deg(__R)\
-    (float)((__R * 180.0.f) / GS_PI) 
+    (float)((__R * 180.0f) / GS_PI) 
 
 #define gs_deg2rad(__D)\
     (float)((__D * GS_PI) / 180.0f)
@@ -2543,6 +2636,16 @@ gs_inline void gs_vec3_scale_ip(gs_vec3* vp, f32 s)
     vp->z *= s;
 }
 
+gs_inline float gs_vec3_angle_between(gs_vec3 v0, gs_vec3 v1)
+{
+    return acosf(gs_vec3_dot(v0, v1));
+}
+
+gs_inline float gs_vec3_angle_between_signed(gs_vec3 v0, gs_vec3 v1)
+{
+    return asinf(gs_vec3_len(gs_vec3_cross(v0, v1)));
+}
+
 /*================================================================================
 // Vec4
 ================================================================================*/
@@ -2580,6 +2683,12 @@ gs_inline gs_vec4
 gs_vec4_sub(gs_vec4 v0, gs_vec4 v1) 
 {
     return gs_vec4_ctor(v0.x - v1.y, v0.y - v1.y, v0.z - v1.z, v0.w - v1.w);
+}
+
+gs_inline gs_vec4
+gs_vec4_mul(gs_vec4 v0, gs_vec4 v1) 
+{
+    return gs_vec4_ctor(v0.x * v1.x, v0.y * v1.y, v0.z * v1.z, v0.w * v1.w);
 }
 
 gs_inline gs_vec4
@@ -2679,7 +2788,7 @@ gs_mat4_ctor() {
 }
 
 gs_inline
-gs_mat4 gs_mat4_elem(const float elements[16])
+gs_mat4 gs_mat4_elem(const float* elements)
 {
     gs_mat4 mat = gs_mat4_ctor();
     memcpy(mat.elements, elements, sizeof(f32) * 16);
@@ -2969,7 +3078,8 @@ gs_mat4_scale(float x, float y, float z)
 }
 
 // Assumes normalized axis
-gs_inline gs_mat4 gs_mat4_rotatev(float angle, gs_vec3 axis)
+gs_inline gs_mat4 
+gs_mat4_rotatev(float angle, gs_vec3 axis)
 {
     gs_mat4 m_res = gs_mat4_identity();
 
@@ -3036,25 +3146,23 @@ gs_mat4_look_at(gs_vec3 position, gs_vec3 target, gs_vec3 up)
 gs_inline
 gs_vec3 gs_mat4_mul_vec3(gs_mat4 m, gs_vec3 v)
 {
-    m = gs_mat4_transpose(m);
     return gs_vec3_ctor
     (
-        m.elements[0 * 4 + 0] * v.x + m.elements[0 * 4 + 1] * v.y + m.elements[0 * 4 + 2] * v.z,  
-        m.elements[1 * 4 + 0] * v.x + m.elements[1 * 4 + 1] * v.y + m.elements[1 * 4 + 2] * v.z,  
-        m.elements[2 * 4 + 0] * v.x + m.elements[2 * 4 + 1] * v.y + m.elements[2 * 4 + 2] * v.z
+        m.elements[0 + 4 * 0] * v.x + m.elements[0 + 4 * 1] * v.y + m.elements[0 + 4 * 2] * v.z,  
+        m.elements[1 + 4 * 0] * v.x + m.elements[1 + 4 * 1] * v.y + m.elements[1 + 4 * 2] * v.z,  
+        m.elements[2 + 4 * 0] * v.x + m.elements[2 + 4 * 1] * v.y + m.elements[2 + 4 * 2] * v.z
     );
 }
     
 gs_inline
 gs_vec4 gs_mat4_mul_vec4(gs_mat4 m, gs_vec4 v)
 {
-    m = gs_mat4_transpose(m);
     return gs_vec4_ctor
     (
-        m.elements[0 * 4 + 0] * v.x + m.elements[0 * 4 + 1] * v.y + m.elements[0 * 4 + 2] * v.z + m.elements[0 * 4 + 3] * v.w,  
-        m.elements[1 * 4 + 0] * v.x + m.elements[1 * 4 + 1] * v.y + m.elements[1 * 4 + 2] * v.z + m.elements[1 * 4 + 3] * v.w,  
-        m.elements[2 * 4 + 0] * v.x + m.elements[2 * 4 + 1] * v.y + m.elements[2 * 4 + 2] * v.z + m.elements[2 * 4 + 3] * v.w,  
-        m.elements[3 * 4 + 0] * v.x + m.elements[3 * 4 + 1] * v.y + m.elements[3 * 4 + 2] * v.z + m.elements[3 * 4 + 3] * v.w
+        m.elements[0 + 4 * 0] * v.x + m.elements[0 + 4 * 1] * v.y + m.elements[0 + 4 * 2] * v.z + m.elements[0 + 4 * 3] * v.w,  
+        m.elements[1 + 4 * 0] * v.x + m.elements[1 + 4 * 1] * v.y + m.elements[1 + 4 * 2] * v.z + m.elements[1 + 4 * 3] * v.w,  
+        m.elements[2 + 4 * 0] * v.x + m.elements[2 + 4 * 1] * v.y + m.elements[2 + 4 * 2] * v.z + m.elements[2 + 4 * 3] * v.w,  
+        m.elements[3 + 4 * 0] * v.x + m.elements[3 + 4 * 1] * v.y + m.elements[3 + 4 * 2] * v.z + m.elements[3 + 4 * 3] * v.w
     );
 }
 
@@ -3315,6 +3423,30 @@ gs_quat gs_quat_from_euler(f32 yaw_deg, f32 pitch_deg, f32 roll_deg)
     return q;
 }
 
+gs_inline
+float gs_quat_pitch(gs_quat* q)
+{
+    return atan2(2.0f * q->y * q->z + q->w * q->x, q->w * q->w - q->x * q->x - q->y * q->y + q->z * q->z);
+}
+
+gs_inline
+float gs_quat_yaw(gs_quat* q)
+{
+    return asin(-2.0f * (q->x * q->z - q->w * q->y));
+}
+
+gs_inline
+float gs_quat_roll(gs_quat* q)
+{
+    return atan2(2.0f * q->x * q->y +  q->z * q->w,  q->x * q->x + q->w * q->w - q->y * q->y - q->z * q->z);
+}
+
+gs_inline
+gs_vec3 gs_quat_to_euler(gs_quat* q)
+{
+    return gs_v3(gs_quat_yaw(q), gs_quat_pitch(q), gs_quat_roll(q));
+}
+
 /*================================================================================
 // Transform (Non-Uniform Scalar VQS)
 ================================================================================*/
@@ -3467,7 +3599,7 @@ typedef struct gs_camera_t
 GS_API_DECL gs_camera_t gs_camera_default();
 GS_API_DECL gs_camera_t gs_camera_perspective();
 GS_API_DECL gs_mat4 gs_camera_get_view(gs_camera_t* cam);
-GS_API_DECL gs_mat4 gs_camera_get_projection(gs_camera_t* cam, int32_t view_width, int32_t view_height);
+GS_API_DECL gs_mat4 gs_camera_get_proj(gs_camera_t* cam, int32_t view_width, int32_t view_height);
 GS_API_DECL gs_mat4 gs_camera_get_view_projection(gs_camera_t* cam, int32_t view_width, int32_t view_height);
 GS_API_DECL gs_vec3 gs_camera_forward(gs_camera_t* cam);
 GS_API_DECL gs_vec3 gs_camera_backward(gs_camera_t* cam);
@@ -3543,7 +3675,7 @@ gs_vec4 gs_aabb_window_coords(gs_aabb_t* aabb, gs_camera_t* camera, gs_vec2 wind
     gs_vec4 br = gs_v4(aabb->max.x, aabb->max.y, 0.f, 1.f);
 
     gs_mat4 view_mtx = gs_camera_get_view(camera);
-    gs_mat4 proj_mtx = gs_camera_get_projection(camera, window_size.x, window_size.y);
+    gs_mat4 proj_mtx = gs_camera_get_proj(camera, (int32_t)window_size.x, (int32_t)window_size.y);
     gs_mat4 vp = gs_mat4_mul(proj_mtx, view_mtx);
 
     // Transform verts
@@ -3574,31 +3706,6 @@ gs_vec4 gs_aabb_window_coords(gs_aabb_t* aabb, gs_camera_t* camera, gs_vec2 wind
 /*========================
 // GS_PLATFORM
 ========================*/
-
-/* Platform Apple */
-#if (defined __APPLE__ || defined _APPLE)   
-
-    #define GS_PLATFORM_APPLE
-
-/* Platform Windows */
-#elif (defined _WIN32 || defined _WIN64)
-
-    // Necessary windows defines before including windows.h, because it's retarded.
-    #define OEMRESOURCE
-
-    #define GS_PLATFORM_WIN
-    #include <windows.h>
-
-    #define WIN32_LEAN_AND_MEAN
-
-/* Platform Linux */
-#elif (defined linux || defined _linux || defined __linux__)
-
-    #define GS_PLATFORM_LINUX
-
-/* Else - Platform Undefined and Unsupported */
-
-#endif
 
 /*============================================================
 // Platform Time
@@ -3635,7 +3742,7 @@ typedef struct gs_uuid_t
 // Platform Window
 ============================================================*/
 
-#define GS_WINDOW_FLAGS_RESIZABLE   0x01
+#define GS_WINDOW_FLAGS_NO_RESIZE   0x01
 #define GS_WINDOW_FLAGS_FULLSCREEN  0x02
 
 // Should have an internal resource cache of window handles (controlled by the platform api)
@@ -3656,6 +3763,25 @@ typedef enum gs_platform_cursor
 
 typedef enum gs_platform_keycode
 {
+    GS_KEYCODE_INVALID,
+    GS_KEYCODE_SPACE,
+    GS_KEYCODE_APOSTROPHE,  /* ' */
+    GS_KEYCODE_COMMA,  /* , */
+    GS_KEYCODE_MINUS,  /* - */
+    GS_KEYCODE_PERIOD,  /* . */
+    GS_KEYCODE_SLASH,  /* / */
+    GS_KEYCODE_0,
+    GS_KEYCODE_1,
+    GS_KEYCODE_2,
+    GS_KEYCODE_3,
+    GS_KEYCODE_4,
+    GS_KEYCODE_5,
+    GS_KEYCODE_6,
+    GS_KEYCODE_7,
+    GS_KEYCODE_8,
+    GS_KEYCODE_9,
+    GS_KEYCODE_SEMICOLON,  /* ; */
+    GS_KEYCODE_EQUAL,  /* = */
     GS_KEYCODE_A,
     GS_KEYCODE_B,
     GS_KEYCODE_C,
@@ -3682,47 +3808,31 @@ typedef enum gs_platform_keycode
     GS_KEYCODE_X,
     GS_KEYCODE_Y,
     GS_KEYCODE_Z,
-    GS_KEYCODE_LSHIFT,
-    GS_KEYCODE_RSHIFT,
-    GS_KEYCODE_LALT,
-    GS_KEYCODE_RALT,
-    GS_KEYCODE_LCTRL,
-    GS_KEYCODE_RCTRL,
-    GS_KEYCODE_BSPACE,
-    GS_KEYCODE_BSLASH,
-    GS_KEYCODE_QMARK,
-    GS_KEYCODE_TILDE,
-    GS_KEYCODE_COMMA,
-    GS_KEYCODE_PERIOD,
-    GS_KEYCODE_ESC, 
-    GS_KEYCODE_SPACE,
-    GS_KEYCODE_LEFT,
-    GS_KEYCODE_UP,
-    GS_KEYCODE_RIGHT,
-    GS_KEYCODE_DOWN,
-    GS_KEYCODE_ZERO,
-    GS_KEYCODE_ONE,
-    GS_KEYCODE_TWO,
-    GS_KEYCODE_THREE,
-    GS_KEYCODE_FOUR,
-    GS_KEYCODE_FIVE,
-    GS_KEYCODE_SIX,
-    GS_KEYCODE_SEVEN,
-    GS_KEYCODE_EIGHT,
-    GS_KEYCODE_NINE,
-    GS_KEYCODE_NPZERO,
-    GS_KEYCODE_NPONE,
-    GS_KEYCODE_NPTWO,
-    GS_KEYCODE_NPTHREE,
-    GS_KEYCODE_NPFOUR,
-    GS_KEYCODE_NPFIVE,
-    GS_KEYCODE_NPSIX,
-    GS_KEYCODE_NPSEVEN,
-    GS_KEYCODE_NPEIGHT,
-    GS_KEYCODE_NPNINE,
-    GS_KEYCODE_CAPS,
+    GS_KEYCODE_LEFT_BRACKET,  /* [ */
+    GS_KEYCODE_BACKSLASH,  /* \ */
+    GS_KEYCODE_RIGHT_BRACKET,  /* ] */
+    GS_KEYCODE_GRAVE_ACCENT,  /* ` */
+    GS_KEYCODE_WORLD_1, /* non-US #1 */
+    GS_KEYCODE_WORLD_2, /* non-US #2 */
+    GS_KEYCODE_ESC,
+    GS_KEYCODE_ENTER,
+    GS_KEYCODE_TAB,
+    GS_KEYCODE_BACKSPACE,
+    GS_KEYCODE_INSERT,
     GS_KEYCODE_DELETE,
+    GS_KEYCODE_RIGHT,
+    GS_KEYCODE_LEFT,
+    GS_KEYCODE_DOWN,
+    GS_KEYCODE_UP,
+    GS_KEYCODE_PAGE_UP,
+    GS_KEYCODE_PAGE_DOWN,
+    GS_KEYCODE_HOME,
     GS_KEYCODE_END,
+    GS_KEYCODE_CAPS_LOCK,
+    GS_KEYCODE_SCROLL_LOCK,
+    GS_KEYCODE_NUM_LOCK,
+    GS_KEYCODE_PRINT_SCREEN,
+    GS_KEYCODE_PAUSE,
     GS_KEYCODE_F1,
     GS_KEYCODE_F2,
     GS_KEYCODE_F3,
@@ -3735,30 +3845,46 @@ typedef enum gs_platform_keycode
     GS_KEYCODE_F10,
     GS_KEYCODE_F11,
     GS_KEYCODE_F12,
-    GS_KEYCODE_HOME,
-    GS_KEYCODE_PLUS,
-    GS_KEYCODE_MINUS,
-    GS_KEYCODE_LBRACKET,
-    GS_KEYCODE_RBRACKET,
-    GS_KEYCODE_SEMI_COLON,
-    GS_KEYCODE_ENTER,
-    GS_KEYCODE_INSERT,
-    GS_KEYCODE_PGUP,
-    GS_KEYCODE_PGDOWN,
-    GS_KEYCODE_NUMLOCK,
-    GS_KEYCODE_TAB,
-    GS_KEYCODE_NPMULT,
-    GS_KEYCODE_NPDIV,
-    GS_KEYCODE_NPPLUS,
-    GS_KEYCODE_NPMINUS,
-    GS_KEYCODE_NPENTER,
-    GS_KEYCODE_NPDEL,
-    GS_KEYCODE_MUTE,
-    GS_KEYCODE_VOLUP,
-    GS_KEYCODE_VOLDOWN,
-    GS_KEYCODE_PAUSE,
-    GS_KEYCODE_PRINT,
-    GS_KEYCODE_COUNT
+    GS_KEYCODE_F13,
+    GS_KEYCODE_F14,
+    GS_KEYCODE_F15,
+    GS_KEYCODE_F16,
+    GS_KEYCODE_F17,
+    GS_KEYCODE_F18,
+    GS_KEYCODE_F19,
+    GS_KEYCODE_F20,
+    GS_KEYCODE_F21,
+    GS_KEYCODE_F22,
+    GS_KEYCODE_F23,
+    GS_KEYCODE_F24,
+    GS_KEYCODE_F25,
+    GS_KEYCODE_KP_0,
+    GS_KEYCODE_KP_1,
+    GS_KEYCODE_KP_2,
+    GS_KEYCODE_KP_3,
+    GS_KEYCODE_KP_4,
+    GS_KEYCODE_KP_5,
+    GS_KEYCODE_KP_6,
+    GS_KEYCODE_KP_7,
+    GS_KEYCODE_KP_8,
+    GS_KEYCODE_KP_9,
+    GS_KEYCODE_KP_DECIMAL,
+    GS_KEYCODE_KP_DIVIDE,
+    GS_KEYCODE_KP_MULTIPLY,
+    GS_KEYCODE_KP_SUBTRACT,
+    GS_KEYCODE_KP_ADD,
+    GS_KEYCODE_KP_ENTER,
+    GS_KEYCODE_KP_EQUAL,
+    GS_KEYCODE_LEFT_SHIFT,
+    GS_KEYCODE_LEFT_CONTROL,
+    GS_KEYCODE_LEFT_ALT,
+    GS_KEYCODE_LEFT_SUPER,
+    GS_KEYCODE_RIGHT_SHIFT,
+    GS_KEYCODE_RIGHT_CONTROL,
+    GS_KEYCODE_RIGHT_ALT,
+    GS_KEYCODE_RIGHT_SUPER,
+    GS_KEYCODE_MENU,
+    GS_KEYCODE_COUNT 
 } gs_platform_keycode;
 
 typedef enum gs_platform_mouse_button_code
@@ -3774,25 +3900,49 @@ typedef struct gs_platform_mouse_t
     b32 button_map[GS_MOUSE_BUTTON_CODE_COUNT];
     b32 prev_button_map[GS_MOUSE_BUTTON_CODE_COUNT];
     gs_vec2 position;
-    gs_vec2 prev_position;
+    gs_vec2 delta;
     gs_vec2 wheel;
     b32 moved_this_frame;
+    b32 locked;
 } gs_platform_mouse_t;
+
+#define GS_PLATFORM_MAX_TOUCH   5
+
+typedef struct gs_platform_touchpoint_t
+{
+    size_t id;
+    gs_vec2 position;
+    gs_vec2 delta;
+    uint16_t changed;
+    uint16_t pressed;
+    uint16_t down;
+} gs_platform_touchpoint_t;
+
+typedef struct gs_platform_touch_t
+{
+    gs_platform_touchpoint_t points[GS_PLATFORM_MAX_TOUCH];
+    uint16_t size;  // Current number of touches active
+} gs_platform_touch_t;
 
 typedef struct gs_platform_input_t
 {
     b32 key_map[GS_KEYCODE_COUNT];
     b32 prev_key_map[GS_KEYCODE_COUNT];
     gs_platform_mouse_t mouse;
+    gs_platform_touch_t touch;
 } gs_platform_input_t;
 
-// Enumeration of all platform type
+// Enumeration of all platform types
 typedef enum gs_platform_type
 {
     GS_PLATFORM_TYPE_UNKNOWN = 0,
     GS_PLATFORM_TYPE_WINDOWS,
     GS_PLATFORM_TYPE_LINUX,
-    GS_PLATFORM_TYPE_MAC
+    GS_PLATFORM_TYPE_MAC,
+    GS_PLATFORM_TYPE_ANDROID,
+    GS_PLATFORM_TYPE_IOS,
+    GS_PLATFORM_TYPE_HTML5,
+    GS_PLATFORM_TYPE_RPI
 } gs_platform_type;
 
 typedef enum gs_platform_video_driver_type
@@ -3843,15 +3993,132 @@ typedef struct gs_platform_settings_t
     gs_platform_video_settings_t video;
 } gs_platform_settings_t;
 
+typedef enum gs_platform_event_type
+{
+    GS_PLATFORM_EVENT_MOUSE,
+    GS_PLATFORM_EVENT_KEY,
+    GS_PLATFORM_EVENT_WINDOW,
+    GS_PLATFORM_EVENT_TOUCH,
+    GS_PLATFORM_EVENT_APP
+} gs_platform_event_type;
+
+typedef enum gs_platform_key_modifier_type
+{
+    GS_PLATFORM_KEY_MODIFIER_NONE    = 0x00,
+    GS_PLATFORM_KEY_MODIFIER_SHIFT   = 0x01,
+    GS_PLATFORM_KEY_MODIFIER_CONTROL = 0x02,
+    GS_PLATFORM_KEY_MODIFIER_ALT     = 0x04
+} gs_platform_key_modifier_type;
+
+typedef enum gs_platform_key_action_type
+{
+    GS_PLATFORM_KEY_PRESSED,
+    GS_PLATFORM_KEY_DOWN,
+    GS_PLATFORM_KEY_RELEASED
+} gs_platform_key_action_type;
+
+typedef struct gs_platform_key_event_t
+{
+    int32_t codepoint;
+    gs_platform_keycode keycode;
+    gs_platform_key_action_type action;
+    gs_platform_key_modifier_type modifier;
+} gs_platform_key_event_t;
+
+typedef enum gs_platform_mousebutton_action_type
+{
+    GS_PLATFORM_MOUSE_BUTTON_PRESSED,
+    GS_PLATFORM_MOUSE_BUTTON_DOWN,
+    GS_PLATFORM_MOUSE_BUTTON_RELEASED,
+    GS_PLATFORM_MOUSE_MOVE,
+    GS_PLATFORM_MOUSE_ENTER,
+    GS_PLATFORM_MOUSE_LEAVE,
+    GS_PLATFORM_MOUSE_WHEEL
+} gs_platform_mousebutton_action_type;
+
+typedef struct gs_platform_mouse_event_t 
+{
+    int32_t codepoint;
+    union {
+        gs_platform_mouse_button_code button;
+        gs_vec2 wheel;
+        gs_vec2 move;
+    };
+    gs_platform_mousebutton_action_type action;
+} gs_platform_mouse_event_t;
+
+typedef enum gs_platform_window_action_type
+{
+    GS_PLATFORM_WINDOW_RESIZE,
+    GS_PLATFORM_WINDOW_LOSE_FOCUS,
+    GS_PLATFORM_WINDOW_GAIN_FOCUS,
+    GS_PLATFORM_WINDOW_CREATE,
+    GS_PLATFORM_WINDOW_DESTROY
+} gs_platform_window_action_type;
+
+typedef struct gs_platform_window_event_t
+{
+    uint32_t hndl;
+    gs_platform_window_action_type action;
+} gs_platform_window_event_t;
+
+typedef enum gs_platform_touch_action_type
+{
+    GS_PLATFORM_TOUCH_DOWN,
+    GS_PLATFORM_TOUCH_UP,
+    GS_PLATFORM_TOUCH_MOVE,
+    GS_PLATFORM_TOUCH_CANCEL
+} gs_platform_touch_action_type;
+
+typedef struct gs_platform_point_event_data_t {
+   uintptr_t id;
+   gs_vec2 position;
+   uint16_t changed;
+} gs_platform_point_event_data_t;
+
+typedef struct gs_platform_touch_event_t
+{
+    gs_platform_touch_action_type action;
+    gs_platform_point_event_data_t point;
+} gs_platform_touch_event_t;
+
+typedef enum gs_platform_app_action_type
+{
+    GS_PLATFORM_APP_START,
+    GS_PLATFORM_APP_PAUSE,
+    GS_PLATFORM_APP_RESUME,
+    GS_PLATFORM_APP_STOP
+} gs_platform_app_action_type;
+
+typedef struct gs_platform_app_event_t
+{
+    gs_platform_app_action_type action;
+} gs_platform_app_event_t;
+
+// Platform events
+typedef struct gs_platform_event_t
+{
+    gs_platform_event_type type;
+    union {
+        gs_platform_key_event_t     key;
+        gs_platform_mouse_event_t   mouse;
+        gs_platform_window_event_t  window;
+        gs_platform_touch_event_t   touch;
+        gs_platform_app_event_t     app;
+    };
+    uint32_t idx;
+} gs_platform_event_t;
+
 // Necessary function pointer typedefs
 typedef void (* gs_dropped_files_callback_t)(void*, int32_t count, const char** file_paths);
 typedef void (* gs_window_close_callback_t)(void*);
+typedef void (* gs_character_callback_t)(void*, uint32_t code_point);
 
 /*===============================================================================================
 // Platform Interface
 ===============================================================================================*/
 
-typedef struct gs_platform_i
+typedef struct gs_platform_t
 {
     // Settings for platform, including video
     gs_platform_settings_t settings;
@@ -3865,61 +4132,125 @@ typedef struct gs_platform_i
     // Window data and handles
     gs_slot_array(void*) windows;
 
+    // Events that user can poll
+    gs_dyn_array(gs_platform_event_t) events;
+
     // Cursors
     void* cursors[GS_PLATFORM_CURSOR_COUNT];
 
     // Specific user data (for custom implementations)
     void* user_data;
-} gs_platform_i;
+
+} gs_platform_t;
 
 /*===============================================================================================
 // Platform API
 ===============================================================================================*/
 
-// Platform Init / Shutdown
-GS_API_DECL gs_platform_i*  gs_platform_create();
-GS_API_DECL void            gs_platform_destroy(gs_platform_i* platform);
-GS_API_DECL gs_result       gs_platform_init(gs_platform_i* platform);      // Initialize global platform layer
-GS_API_DECL gs_result       gs_platform_shutdown(gs_platform_i* platform);  // Shutdown gloabl platform layer
+/* == Platform Default API == */
+
+// Platform Create / Destroy
+GS_API_DECL gs_platform_t*  gs_platform_create();
+GS_API_DECL void            gs_platform_destroy(gs_platform_t* platform);
+
+ // Platform Init / Update / Shutdown
+GS_API_DECL void  gs_platform_update(gs_platform_t* platform);    // Update platform layer
 
 // Platform Util
-GS_API_DECL void   gs_platform_sleep(float ms); // Sleeps platform for time in ms
-GS_API_DECL double gs_platform_elapsed_time();  // Returns time in ms since initialization of platform
 GS_API_DECL float  gs_platform_delta_time();
-
-// Platform Video
-GS_API_DECL void gs_platform_enable_vsync(int32_t enabled);
 
 // Platform UUID
 GS_API_DECL gs_uuid_t gs_platform_generate_uuid();
-GS_API_DECL void      gs_platform_uuid_to_string(char* temp_buffer, const gs_uuid_t* uuid); // Expects a temp buffer with at leat 32 bytes
+GS_API_DECL void      gs_platform_uuid_to_string(char* temp_buffer, const gs_uuid_t* uuid); // Expects a temp buffer with at least 32 bytes
 GS_API_DECL uint32_t  gs_platform_hash_uuid(const gs_uuid_t* uuid);
 
 // Platform Input
-GS_API_DECL gs_result gs_platform_process_input(gs_platform_input_t* input);
 GS_API_DECL void      gs_platform_update_input(gs_platform_input_t* input);
 GS_API_DECL void      gs_platform_press_key(gs_platform_keycode code);
 GS_API_DECL void      gs_platform_release_key(gs_platform_keycode code);
 GS_API_DECL bool      gs_platform_was_key_down(gs_platform_keycode code);
-GS_API_DECL bool      gs_platform_key_pressed(gs_platform_keycode code);
-GS_API_DECL bool      gs_platform_key_down(gs_platform_keycode code);
-GS_API_DECL bool      gs_platform_key_released(gs_platform_keycode code);
 GS_API_DECL void      gs_platform_press_mouse_button(gs_platform_mouse_button_code code);
 GS_API_DECL void      gs_platform_release_mouse_button(gs_platform_mouse_button_code code);
 GS_API_DECL bool      gs_platform_was_mouse_down(gs_platform_mouse_button_code code);
+GS_API_DECL void      gs_platform_press_touch(uint32_t idx);
+GS_API_DECL void      gs_platform_release_touch(uint32_t idx);
+GS_API_DECL bool      gs_platform_was_touch_down(uint32_t idx);
+
+GS_API_DECL bool      gs_platform_key_pressed(gs_platform_keycode code);
+GS_API_DECL bool      gs_platform_key_down(gs_platform_keycode code);
+GS_API_DECL bool      gs_platform_key_released(gs_platform_keycode code);
+GS_API_DECL bool      gs_platform_touch_pressed(uint32_t idx);
+GS_API_DECL bool      gs_platform_touch_down(uint32_t idx);
+GS_API_DECL bool      gs_platform_touch_released(uint32_t idx);
 GS_API_DECL bool      gs_platform_mouse_pressed(gs_platform_mouse_button_code code);
 GS_API_DECL bool      gs_platform_mouse_down(gs_platform_mouse_button_code code);
 GS_API_DECL bool      gs_platform_mouse_released(gs_platform_mouse_button_code code);
-GS_API_DECL void      gs_platform_set_mouse_position(uint32_t handle, float x, float y);
 GS_API_DECL gs_vec2   gs_platform_mouse_deltav();
 GS_API_DECL void      gs_platform_mouse_delta(float* x, float* y);
 GS_API_DECL gs_vec2   gs_platform_mouse_positionv();
-GS_API_DECL void      gs_platform_mouse_position(float* x, float* y);
+GS_API_DECL void      gs_platform_mouse_position(int32_t* x, int32_t* y);
 GS_API_DECL void      gs_platform_mouse_wheel(float* x, float* y);
 GS_API_DECL bool      gs_platform_mouse_moved();
+GS_API_DECL bool      gs_platform_mouse_locked();
+GS_API_DECL gs_vec2   gs_platform_touch_deltav(uint32_t idx);
+GS_API_DECL void      gs_platform_touch_delta(uint32_t idx, float* x, float* y);
+GS_API_DECL gs_vec2   gs_platform_touch_positionv(uint32_t idx);
+GS_API_DECL void      gs_platform_touch_position(uint32_t idx, float* x, float* y);
+
+// Platform Events
+GS_API_DECL bool      gs_platform_poll_events(gs_platform_event_t* evt, bool32_t consume);
+GS_API_DECL void      gs_platform_add_event(gs_platform_event_t* evt);
 
 // Platform Window
 GS_API_DECL uint32_t gs_platform_create_window(const char* title, uint32_t width, uint32_t height);
+GS_API_DECL uint32_t gs_platform_main_window();
+
+// Platform File IO (this all needs to be made available for impl rewrites)
+GS_API_DECL char*      gs_platform_read_file_contents_default_impl(const char* file_path, const char* mode, size_t* sz);
+GS_API_DECL gs_result  gs_platform_write_file_contents_default_impl(const char* file_path, const char* mode, void* data, size_t data_size);
+GS_API_DECL bool       gs_platform_file_exists_default_impl(const char* file_path);
+GS_API_DECL int32_t    gs_platform_file_size_in_bytes_default_impl(const char* file_path);
+GS_API_DECL void       gs_platform_file_extension_default_impl(char* buffer, size_t buffer_sz, const char* file_path);
+
+// Default file implementations
+#ifndef gs_platform_read_file_contents
+#define gs_platform_read_file_contents gs_platform_read_file_contents_default_impl
+#endif
+#ifndef gs_platform_write_file_contents
+#define gs_platform_write_file_contents gs_platform_write_file_contents_default_impl
+#endif
+#ifndef gs_platform_file_exists
+#define gs_platform_file_exists gs_platform_file_exists_default_impl
+#endif
+#ifndef gs_platform_file_exists
+#define gs_platform_file_exists gs_platform_file_exists_default_impl
+#endif
+#ifndef gs_platform_file_size_in_bytes
+#define gs_platform_file_size_in_bytes gs_platform_file_size_in_bytes_default_impl
+#endif
+#ifndef gs_platform_file_extension
+#define gs_platform_file_extension gs_platform_file_extension_default_impl
+#endif
+
+/* == Platform Dependent API == */
+
+GS_API_DECL void            gs_platform_init(gs_platform_t* platform);      // Initialize platform layer
+GS_API_DECL void            gs_platform_shutdown(gs_platform_t* platform);  // Shutdown platform layer
+
+// Platform Util
+GS_API_DECL double gs_platform_elapsed_time();  // Returns time in ms since initialization of platform
+GS_API_DECL void   gs_platform_sleep(float ms); // Sleeps platform for time in ms
+
+// Platform Video
+GS_API_DECL void gs_platform_enable_vsync(int32_t enabled);
+
+// Platform Input
+GS_API_DECL void                 gs_platform_process_input(gs_platform_input_t* input);
+GS_API_DECL uint32_t             gs_platform_key_to_codepoint(gs_platform_keycode code);
+GS_API_DECL gs_platform_keycode  gs_platform_codepoint_to_key(uint32_t code);
+GS_API_DECL void                 gs_platform_mouse_set_position(uint32_t handle, float x, float y);
+GS_API_DECL void                 gs_platform_lock_mouse(uint32_t handle, bool32_t lock);
+
 GS_API_DECL void*    gs_platform_create_window_internal(const char* title, uint32_t width, uint32_t height);
 GS_API_DECL void     gs_platform_window_swap_buffer(uint32_t handle);
 GS_API_DECL gs_vec2  gs_platform_window_sizev(uint32_t handle);
@@ -3929,21 +4260,14 @@ GS_API_DECL uint32_t gs_platform_window_height(uint32_t handle);
 GS_API_DECL void     gs_platform_set_window_size(uint32_t handle, uint32_t width, uint32_t height);
 GS_API_DECL void     gs_platform_set_window_sizev(uint32_t handle, gs_vec2 v);
 GS_API_DECL void     gs_platform_set_cursor(uint32_t handle, gs_platform_cursor cursor);
-GS_API_DECL uint32_t gs_platform_main_window();
 GS_API_DECL void     gs_platform_set_dropped_files_callback(uint32_t handle, gs_dropped_files_callback_t cb);
 GS_API_DECL void     gs_platform_set_window_close_callback(uint32_t handle, gs_window_close_callback_t cb);
+GS_API_DECL void     gs_platform_set_character_callback(uint32_t handle, gs_character_callback_t cb);
 GS_API_DECL void*    gs_platform_raw_window_handle(uint32_t handle);
 GS_API_DECL gs_vec2  gs_platform_framebuffer_sizev(uint32_t handle);
 GS_API_DECL void     gs_platform_framebuffer_size(uint32_t handle, uint32_t* w, uint32_t* h);
 GS_API_DECL uint32_t gs_platform_framebuffer_width(uint32_t handle);
 GS_API_DECL uint32_t gs_platform_framebuffer_height(uint32_t handle);
-
-// Platform File IO
-GS_API_DECL char*      gs_platform_read_file_contents(const char* file_path, const char* mode, int32_t* sz);
-GS_API_DECL gs_result  gs_platform_write_file_contents(const char* file_path, const char* mode, void* data, size_t data_size);
-GS_API_DECL bool       gs_platform_file_exists(const char* file_path);
-GS_API_DECL int32_t    gs_platform_file_size_in_bytes(const char* file_path);
-GS_API_DECL void       gs_platform_file_extension(char* buffer, size_t buffer_sz, const char* file_path);
 
 /*=============================
 // GS_AUDIO
@@ -3988,7 +4312,7 @@ gs_handle_decl(gs_audio_instance_t);
 // Audio Interface
 =============================*/
 
-typedef struct gs_audio_i
+typedef struct gs_audio_t
 {
     /* Audio source data cache */
     gs_slot_array(gs_audio_source_t) sources;
@@ -4013,23 +4337,27 @@ typedef struct gs_audio_i
 
     /* User data for custom impl */
     void* user_data;
-} gs_audio_i;
+} gs_audio_t;
 
 /*=============================
 // Audio API
 =============================*/
 
 /* Audio Create, Destroy, Init, Shutdown, Submit */
-GS_API_DECL gs_audio_i* gs_audio_create();
-GS_API_DECL void        gs_audio_destroy(gs_audio_i* audio);
-GS_API_DECL gs_result   gs_audio_init(gs_audio_i* audio);
-GS_API_DECL gs_result   gs_audio_shutdown(gs_audio_i* audio);
+GS_API_DECL gs_audio_t* gs_audio_create();
+GS_API_DECL void        gs_audio_destroy(gs_audio_t* audio);
+GS_API_DECL gs_result   gs_audio_init(gs_audio_t* audio);
+GS_API_DECL gs_result   gs_audio_shutdown(gs_audio_t* audio);
 
 /* Audio create source */
 GS_API_DECL gs_handle(gs_audio_source_t) gs_audio_load_from_file(const char* file_path);
 
 /* Audio create instance */
 GS_API_DECL gs_handle(gs_audio_instance_t) gs_audio_instance_create(gs_audio_instance_decl_t* decl);
+
+/* Locking audio thread (optional) */
+GS_API_DECL void gs_audio_mutex_lock(gs_audio_t* audio);
+GS_API_DECL void gs_audio_mutex_unlock(gs_audio_t* audio);
 
 /* Audio play instance */
 GS_API_DECL void     gs_audio_play_source(gs_handle(gs_audio_source_t) src, float volume);
@@ -4160,6 +4488,9 @@ gs_enum_decl(gs_graphics_shader_language_type,
     GS_GRAPHICS_SHADER_LANGUAGE_GLSL
 );
 
+/* Push Constant Type */
+// Really don't want to handle "auto-merging" of data types
+
 /* Uniform Type */
 gs_enum_decl(gs_graphics_uniform_type,
     GS_GRAPHICS_UNIFORM_FLOAT,
@@ -4167,7 +4498,9 @@ gs_enum_decl(gs_graphics_uniform_type,
     GS_GRAPHICS_UNIFORM_VEC2,
     GS_GRAPHICS_UNIFORM_VEC3,
     GS_GRAPHICS_UNIFORM_VEC4,
-    GS_GRAPHICS_UNIFORM_MAT4
+    GS_GRAPHICS_UNIFORM_MAT4,
+    GS_GRAPHICS_UNIFORM_SAMPLER2D,
+    GS_GRAPHICS_UNIFORM_BLOCK
 );
 
 /* Uniform Block Usage Type */
@@ -4210,6 +4543,7 @@ gs_enum_decl(gs_graphics_buffer_type,
     GS_GRAPHICS_BUFFER_INDEX,
     GS_GRAPHICS_BUFFER_FRAME,
     GS_GRAPHICS_BUFFER_UNIFORM,
+    GS_GRAPHICS_BUFFER_UNIFORM_CONSTANT,
     GS_GRAPHICS_BUFFER_SAMPLER
 );
 
@@ -4218,6 +4552,12 @@ gs_enum_decl(gs_graphics_buffer_usage_type,
     GS_GRAPHICS_BUFFER_USAGE_STATIC,
     GS_GRAPHICS_BUFFER_USAGE_STREAM,
     GS_GRAPHICS_BUFFER_USAGE_DYNAMIC
+);
+
+/* Buffer Update Type */
+gs_enum_decl(gs_graphics_buffer_update_type,
+    GS_GRAPHICS_BUFFER_UPDATE_RECREATE,
+    GS_GRAPHICS_BUFFER_UPDATE_SUBDATA
 );
 
 /* Texture Format */
@@ -4252,24 +4592,25 @@ gs_enum_decl(gs_graphics_texture_filtering_type,
 );
 
 /* Render Pass Action Flag */
-gs_enum_decl(gs_graphics_render_pass_action_flag,
-    GS_GRAPHICS_RENDER_PASS_ACTION_CLEAR_COLOR = 0x01,
-    GS_GRAPHICS_RENDER_PASS_ACTION_CLEAR_DEPTH = 0x02,
-    GS_GRAPHICS_RENDER_PASS_ACTION_CLEAR_STENCIL = 0x04,
-    GS_GRAPHICS_RENDER_PASS_ACTION_CLEAR_NONE = 0x08
+gs_enum_decl(gs_graphics_clear_flag,
+    GS_GRAPHICS_CLEAR_COLOR = 0x01,
+    GS_GRAPHICS_CLEAR_DEPTH = 0x02,
+    GS_GRAPHICS_CLEAR_STENCIL = 0x04,
+    GS_GRAPHICS_CLEAR_NONE = 0x08
 );
 
-#define GS_GRAPHICS_RENDER_PASS_ACTION_CLEAR_ALL\
-    GS_GRAPHICS_RENDER_PASS_ACTION_CLEAR_COLOR |\
-    GS_GRAPHICS_RENDER_PASS_ACTION_CLEAR_DEPTH |\
-    GS_GRAPHICS_RENDER_PASS_ACTION_CLEAR_STENCIL
+#define GS_GRAPHICS_CLEAR_ALL\
+    GS_GRAPHICS_CLEAR_COLOR |\
+    GS_GRAPHICS_CLEAR_DEPTH |\
+    GS_GRAPHICS_CLEAR_STENCIL
 
 /* Bind Type */
 gs_enum_decl(gs_graphics_bind_type,
     GS_GRAPHICS_BIND_VERTEX_BUFFER,
     GS_GRAPHICS_BIND_INDEX_BUFFER,
     GS_GRAPHICS_BIND_UNIFORM_BUFFER,
-    GS_GRAPHICS_BIND_SAMPLER_BUFFER
+    GS_GRAPHICS_BIND_UNIFORM,
+    GS_GRAPHICS_BIND_IMAGE_BUFFER
 );
 
 /* Depth Function Type */
@@ -4311,8 +4652,11 @@ gs_enum_decl(gs_graphics_stencil_op_type,       // Default value of 0x00 means k
 /* Internal Graphics Resource Handles */
 gs_handle_decl(gs_graphics_shader_t);
 gs_handle_decl(gs_graphics_texture_t);
-gs_handle_decl(gs_graphics_buffer_t);
-gs_handle_decl(gs_graphics_uniform_block_t);
+gs_handle_decl(gs_graphics_vertex_buffer_t);
+gs_handle_decl(gs_graphics_index_buffer_t);
+gs_handle_decl(gs_graphics_uniform_buffer_t);
+gs_handle_decl(gs_graphics_framebuffer_t);
+gs_handle_decl(gs_graphics_uniform_t);
 gs_handle_decl(gs_graphics_render_pass_t);
 gs_handle_decl(gs_graphics_pipeline_t);
 
@@ -4331,27 +4675,6 @@ typedef struct gs_graphics_shader_desc_t
     const char* name;               // Optional (for logging and debugging mainly)
 } gs_graphics_shader_desc_t;
 
-/* Graphics Uniform Desc */
-typedef struct gs_graphics_uniform_desc_t
-{
-    const char* name;               // Name of uniform in shader (used for opengl/es), MUST PROVIDE
-    uint32_t type;                  // Type of uniform/sampler
-    uint32_t slot;                  // Binding slot for textures to be bound
-} gs_graphics_uniform_desc_t;
-
-typedef gs_graphics_uniform_desc_t gs_graphics_sampler_desc_t;
-
-/* Graphics Uniform Block Desc */
-typedef struct gs_graphics_uniform_block_desc_t
-{
-    gs_handle(gs_graphics_shader_t) shader;     // Shader associated with uniforms, MUST PROVIDE
-    gs_graphics_uniform_desc_t* uniforms;       // Array of uniform descriptions
-    size_t size;                                // Size in bytes of uniform description array
-    gs_graphics_shader_stage_type shader_stage; // Stage for this uniform block to applied (used for explicit renderers VK/DX12/MTL)
-    gs_graphics_uniform_block_usage_type usage; // Designates whether this block is to be applied seldomly or frequently as a push constant
-    const char* name;                           // Used for debugging
-} gs_graphics_uniform_block_desc_t;
-
 /* Graphics Texture Desc */
 typedef struct gs_graphics_texture_desc_t
 {
@@ -4368,37 +4691,84 @@ typedef struct gs_graphics_texture_desc_t
     b32 render_target;                              // Default to false (not a render target)
 } gs_graphics_texture_desc_t;
 
-/* Graphics Buffer Desc */
-typedef struct gs_graphics_buffer_desc_t
+/* Graphics Uniform Layout Desc */
+typedef struct gs_graphics_uniform_layout_desc_t
 {
-    gs_graphics_buffer_type type;               // Type of buffer (vertex, index, frame, uniform, sampler)
-    gs_graphics_buffer_usage_type usage;        // Usage type of buffer (static, dynamic, stream, draw, read)
-    void* data;                                 // Array of buffer data
-    size_t size;                                // Size in bytes of buffer data array
-    const char* name;                           // Name of buffer (required for sampler/uniform buffers)
-} gs_graphics_buffer_desc_t;
+    gs_graphics_uniform_type type;                  // Type of field
+    const char* fname;                              // Name of field (required for implicit APIs, like OpenGL/ES)
+} gs_graphics_uniform_layout_desc_t;
 
-typedef gs_graphics_buffer_desc_t gs_graphics_vertex_buffer_desc_t;
-typedef gs_graphics_buffer_desc_t gs_graphics_index_buffer_desc_t;
-typedef gs_graphics_buffer_desc_t gs_graphics_uniform_buffer_desc_t;
-typedef gs_graphics_buffer_desc_t gs_graphics_sampler_buffer_desc_t;
-
-/* Graphics Render Pass Action */
-typedef struct gs_graphics_render_pass_action_t
+/* Graphics Uniform Desc */
+typedef struct gs_graphics_uniform_desc_t
 {
-    gs_graphics_render_pass_action_flag flag;   // Flag to be set (clear color, clear depth, clear stencil, clear all)
+    gs_graphics_shader_stage_type stage;
+    const char* name;
+    gs_graphics_uniform_layout_desc_t* layout;
+    size_t layout_size;
+} gs_graphics_uniform_desc_t;
+
+typedef struct gs_graphics_buffer_update_desc_t
+{
+    gs_graphics_buffer_update_type type;
+    size_t offset;
+} gs_graphics_buffer_update_desc_t;
+
+/* Graphics Buffer Desc General */
+typedef struct gs_graphics_buffer_base_desc_t
+{
+    void * data;
+    size_t size;
+    gs_graphics_buffer_usage_type usage;
+} gs_graphics_buffer_base_desc_t;
+
+typedef struct gs_graphics_vertex_buffer_desc_t
+{
+    void* data;
+    size_t size;
+    gs_graphics_buffer_usage_type usage;
+    gs_graphics_buffer_update_desc_t update;
+} gs_graphics_vertex_buffer_desc_t;
+
+typedef gs_graphics_vertex_buffer_desc_t gs_graphics_index_buffer_desc_t;
+
+typedef struct gs_graphics_uniform_buffer_desc_t
+{
+    void* data;
+    size_t size;
+    gs_graphics_buffer_usage_type usage;
+    const char* name;
+    gs_graphics_shader_stage_type stage;
+    gs_graphics_buffer_update_desc_t update;
+} gs_graphics_uniform_buffer_desc_t;
+
+typedef struct gs_graphics_framebuffer_desc_t 
+{
+    void* data;
+} gs_graphics_framebuffer_desc_t;
+
+/* Graphics Clear Action */
+typedef struct gs_graphics_clear_action_t
+{
+    gs_graphics_clear_flag flag;   // Flag to be set (clear color, clear depth, clear stencil, clear all)
     union 
     {
-        float color[4];                             // Clear color value
-        float depth;                                // Clear depth value
-        int32_t stencil;                            // Clear stencil value
+        float color[4];            // Clear color value
+        float depth;               // Clear depth value
+        int32_t stencil;           // Clear stencil value
     };
-} gs_graphics_render_pass_action_t;
+ } gs_graphics_clear_action_t;
+
+/* Graphics Clear Desc */
+typedef struct gs_graphics_clear_desc_t
+{
+    gs_graphics_clear_action_t* actions;    // Clear action array
+    size_t size;                           // Size
+} gs_graphics_clear_desc_t;
 
 /* Graphics Render Pass Desc */
 typedef struct gs_graphics_render_pass_desc_t
 {
-    gs_handle(gs_graphics_buffer_t) fbo;      // Default is set to invalid for backbuffer
+    gs_handle(gs_graphics_framebuffer_t) fbo; // Default is set to invalid for backbuffer
     gs_handle(gs_graphics_texture_t)* color;  // Array of color attachments to be bound (useful for MRT, if supported) 
     size_t color_size;                        // Size of color attachment array
     gs_handle(gs_graphics_texture_t) depth;   // Depth attachment to be bound
@@ -4409,14 +4779,77 @@ typedef struct gs_graphics_render_pass_desc_t
     // If you want to write to a color attachment, you have to have a frame buffer attached that isn't the backbuffer
 */
 
+typedef enum gs_graphics_vertex_data_type
+{
+    GS_GRAPHICS_VERTEX_DATA_INTERLEAVED = 0x00,
+    GS_GRAPHICS_VERTEX_DATA_NONINTERLEAVED
+} gs_graphics_vertex_data_type;
+
+typedef enum gs_graphics_access_type
+{
+    GS_GRAPHICS_ACCESS_READ_ONLY = 0x00,
+    GS_GRAPHICS_ACCESS_WRITE_ONLY,
+    GS_GRAPHICS_ACCESS_READ_WRITE,
+} gs_graphics_access_type;
+
+typedef struct gs_graphics_bind_vertex_buffer_desc_t {
+    gs_handle(gs_graphics_vertex_buffer_t) buffer;
+    size_t offset;
+    gs_graphics_vertex_data_type data_type;
+} gs_graphics_bind_vertex_buffer_desc_t;
+
+typedef struct gs_graphics_bind_index_buffer_desc_t {
+    gs_handle(gs_graphics_index_buffer_t) buffer;
+} gs_graphics_bind_index_buffer_desc_t;
+
+typedef struct gs_graphics_bind_image_buffer_desc_t {
+    gs_handle(gs_graphics_texture_t) tex;
+    uint32_t binding;
+    gs_graphics_access_type access;
+} gs_graphics_bind_image_buffer_desc_t;
+
+typedef struct gs_graphics_bind_uniform_buffer_desc_t {
+    gs_handle(gs_graphics_uniform_buffer_t) buffer;
+    uint32_t binding;
+    struct {
+        size_t offset;      // Specify an offset for ranged binds.
+        size_t size;        // Specify size for ranged binds.
+    } range;
+} gs_graphics_bind_uniform_buffer_desc_t;
+
+typedef struct gs_graphics_bind_uniform_desc_t {
+    gs_handle(gs_graphics_uniform_t) uniform;
+    void* data;
+    uint32_t binding;   // Base binding for samplers?
+} gs_graphics_bind_uniform_desc_t;
+
 /* Graphics Binding Desc */
 typedef struct gs_graphics_bind_desc_t
 {
-    gs_graphics_bind_type type;             // Type of data to bind (vertex buffer, index buffer, uniform buffer, sampler buffer)
-    gs_handle(gs_graphics_buffer_t) buffer; // Buffer to bind (vertex, index, uniform, sampler)
-    void* data;                             // Data associated with bind
-    size_t size;                            // Size of data in bytes
-    uint32_t binding;                       // Binding for tex units
+    struct {
+        gs_graphics_bind_vertex_buffer_desc_t* desc;    // Array of vertex buffer declarations (NULL by default)
+        size_t size;                                    // Size of array in bytes (optional if only one)
+    } vertex_buffers;
+
+    struct {
+        gs_graphics_bind_index_buffer_desc_t* desc;  // Array of index buffer declarations (NULL by default)
+        size_t size;                                 // Size of array in bytes (optional if only one)
+    } index_buffers;
+
+    struct {
+        gs_graphics_bind_uniform_buffer_desc_t* desc;   // Array of uniform buffer declarations (NULL by default)
+        size_t size;                                    // Size of array in bytes (optional if only one)
+    } uniform_buffers;
+
+    struct {
+        gs_graphics_bind_uniform_desc_t* desc;   // Array of uniform declarations (NULL by default)
+        size_t size;                             // Size of array in bytes (optional if one)
+    } uniforms;
+
+    struct {
+        gs_graphics_bind_image_buffer_desc_t* desc;
+        size_t size;
+    } image_buffers;
 } gs_graphics_bind_desc_t;
 
 /* Graphics Blend State Desc */
@@ -4436,12 +4869,13 @@ typedef struct gs_graphics_depth_state_desc_t
 /* Graphics Stencil State Desc */
 typedef struct gs_graphics_stencil_state_desc_t
 {
-    gs_graphics_stencil_func_type   func;   // Function to set for stencil test
-    uint32_t                        ref;    // Specifies reference val for stencil test
-    uint32_t                        mask;   // Specifies mask that is ANDed with both ref val and stored stencil val
-    gs_graphics_stencil_op_type     sfail;  // Action to take when stencil test fails
-    gs_graphics_stencil_op_type     dpfail; // Action to take when stencil test passes but depth test fails
-    gs_graphics_stencil_op_type     dppass; // Action to take when both stencil test passes and either depth passes or is not enabled
+    gs_graphics_stencil_func_type   func;        // Function to set for stencil test
+    uint32_t                        ref;         // Specifies reference val for stencil test
+    uint32_t                        comp_mask;   // Specifies mask that is ANDed with both ref val and stored stencil val
+    uint32_t                        write_mask;  // Specifies mask that is ANDed with both ref val and stored stencil val
+    gs_graphics_stencil_op_type     sfail;       // Action to take when stencil test fails
+    gs_graphics_stencil_op_type     dpfail;      // Action to take when stencil test passes but depth test fails
+    gs_graphics_stencil_op_type     dppass;      // Action to take when both stencil test passes and either depth passes or is not enabled
 } gs_graphics_stencil_state_desc_t;
 
 /* Graphics Raster State Desc */
@@ -4454,72 +4888,138 @@ typedef struct gs_graphics_raster_state_desc_t
     size_t index_buffer_element_size;             // Element size of index buffer (used for parsing internal data)
 } gs_graphics_raster_state_desc_t;
 
+/* Graphics Compute State Desc */
+typedef struct gs_graphics_compute_state_desc_t
+{
+    gs_handle(gs_graphics_shader_t) shader;         // Compute shader to bind
+} gs_graphics_compute_state_desc_t;
+
+/* Graphics Vertex Attribute Desc */
+typedef struct gs_graphics_vertex_attribute_desc_t {
+    const char* name;                                   // Attribute name (required for lower versions of OpenGL and ES)
+    gs_graphics_vertex_attribute_type format;           // Format for vertex attribute
+    size_t stride;                                      // Total stride of vertex layout (optional, calculated by default)
+    size_t offset;                                      // Offset of this vertex from base pointer of data (optional, calaculated by default)
+    size_t divisor;                                     // Used for instancing. (optional, default = 0x00 for no instancing)
+    uint32_t buffer_idx;                                // Vertex buffer to use (optional, default = 0x00)
+} gs_graphics_vertex_attribute_desc_t;
+
+/* Graphics Vertex Layout Desc */
+typedef struct gs_graphics_vertex_layout_desc_t {
+    gs_graphics_vertex_attribute_desc_t* attrs;      // Vertex attribute array
+    size_t size;                                    // Size in bytes of vertex attribute array
+} gs_graphics_vertex_layout_desc_t;
+
 /* Graphics Pipeline Desc */
 typedef struct gs_graphics_pipeline_desc_t
 {
-    gs_graphics_blend_state_desc_t blend;      // Blend state desc for pipeline
-    gs_graphics_depth_state_desc_t depth;      // Depth state desc for pipeline
-    gs_graphics_raster_state_desc_t raster;    // Raster state desc for pipeline
-    gs_graphics_stencil_state_desc_t stencil;  // Stencil state desc for pipeline
-    gs_graphics_vertex_attribute_type* layout; // Array of vertex attributes for layout
-    size_t size;                               // Size in bytes of vertex attribute array
+    gs_graphics_blend_state_desc_t blend;       // Blend state desc for pipeline
+    gs_graphics_depth_state_desc_t depth;       // Depth state desc for pipeline
+    gs_graphics_raster_state_desc_t raster;     // Raster state desc for pipeline
+    gs_graphics_stencil_state_desc_t stencil;   // Stencil state desc for pipeline
+    gs_graphics_compute_state_desc_t compute;   // Compute state desc for pipeline
+    gs_graphics_vertex_layout_desc_t layout; // Vertex layout desc for pipeline
 } gs_graphics_pipeline_desc_t;
+
+/* Graphics Draw Desc */
+typedef struct gs_graphics_draw_desc_t
+{
+    uint32_t start;                             
+    uint32_t count; 
+    uint32_t instances;
+    uint32_t base_vertex;
+    struct {
+        uint32_t start;
+        uint32_t end;
+    } range;
+} gs_graphics_draw_desc_t;
+
+gs_inline gs_handle(gs_graphics_render_pass_t)
+__gs_render_pass_default_impl() 
+{
+    gs_handle(gs_graphics_render_pass_t) hndl = gs_default_val();
+    return hndl;
+}
+
+// Convenience define for default render pass to back buffer
+#define GS_GRAPHICS_RENDER_PASS_DEFAULT (__gs_render_pass_default_impl())
+
+typedef struct gs_graphics_info_t
+{
+    uint32_t major_version;
+    uint32_t minor_version;
+    struct {
+        bool32 available;
+        uint32_t max_work_group_count[3];
+        uint32_t max_work_group_size[3];
+        uint32_t max_work_group_invocations;
+    } compute;
+} gs_graphics_info_t;
 
 /*==========================
 // Graphics Interface
 ==========================*/
 
-typedef struct gs_graphics_i
+typedef struct gs_graphics_t
 {
-    void* user_data; // For internal use
-} gs_graphics_i;
+    void* user_data;            // For internal use
+    gs_graphics_info_t info;    // Used for querying by user for features
+} gs_graphics_t;
 
 /*==========================
 // Graphics API
 ==========================*/
 
 /* Graphics Interface Creation / Initialization / Shutdown / Destruction */
-GS_API_DECL gs_graphics_i* gs_graphics_create();
-GS_API_DECL void           gs_graphics_destroy(gs_graphics_i* graphics);
-GS_API_DECL gs_result      gs_graphics_init(gs_graphics_i* graphics);
-GS_API_DECL gs_result      gs_graphics_shutdown(gs_graphics_i* graphics);
+GS_API_DECL gs_graphics_t* gs_graphics_create();
+GS_API_DECL void           gs_graphics_destroy(gs_graphics_t* graphics);
+GS_API_DECL void           gs_graphics_init(gs_graphics_t* graphics);
+GS_API_DECL void           gs_graphics_shutdown(gs_graphics_t* graphics);
+
+/* Graphics Info Object Query */
+GS_API_DECL                gs_graphics_info_t* gs_graphics_info();
 
 /* Resource Creation */
-GS_API_DECL gs_handle(gs_graphics_texture_t)     gs_graphics_texture_create(gs_graphics_texture_desc_t* desc);
-GS_API_DECL gs_handle(gs_graphics_buffer_t)      gs_graphics_buffer_create(gs_graphics_buffer_desc_t* desc);
-GS_API_DECL gs_handle(gs_graphics_shader_t)      gs_graphics_shader_create(gs_graphics_shader_desc_t* desc);
-GS_API_DECL gs_handle(gs_graphics_render_pass_t) gs_graphics_render_pass_create(gs_graphics_render_pass_desc_t* desc);
-GS_API_DECL gs_handle(gs_graphics_pipeline_t)    gs_graphics_pipeline_create(gs_graphics_pipeline_desc_t* desc);
+GS_API_DECL gs_handle(gs_graphics_texture_t)        gs_graphics_texture_create(gs_graphics_texture_desc_t* desc);
+GS_API_DECL gs_handle(gs_graphics_uniform_t)        gs_graphics_uniform_create(gs_graphics_uniform_desc_t* desc);
+GS_API_DECL gs_handle(gs_graphics_shader_t)         gs_graphics_shader_create(gs_graphics_shader_desc_t* desc);
+GS_API_DECL gs_handle(gs_graphics_vertex_buffer_t)  gs_graphics_vertex_buffer_create(gs_graphics_vertex_buffer_desc_t* desc);
+GS_API_DECL gs_handle(gs_graphics_index_buffer_t)   gs_graphics_index_buffer_create(gs_graphics_index_buffer_desc_t* desc);
+GS_API_DECL gs_handle(gs_graphics_uniform_buffer_t) gs_graphics_uniform_buffer_create(gs_graphics_uniform_buffer_desc_t* desc);
+GS_API_DECL gs_handle(gs_graphics_framebuffer_t)    gs_graphics_framebuffer_create(gs_graphics_framebuffer_desc_t* desc);
+GS_API_DECL gs_handle(gs_graphics_render_pass_t)    gs_graphics_render_pass_create(gs_graphics_render_pass_desc_t* desc);
+GS_API_DECL gs_handle(gs_graphics_pipeline_t)       gs_graphics_pipeline_create(gs_graphics_pipeline_desc_t* desc);
 
 /* Resource Destruction */
 GS_API_DECL void gs_graphics_texture_destroy(gs_handle(gs_graphics_texture_t) hndl);
-GS_API_DECL void gs_graphics_buffer_destroy(gs_handle(gs_graphics_buffer_t) hndl);
 GS_API_DECL void gs_graphics_shader_destroy(gs_handle(gs_graphics_shader_t) hndl);
 GS_API_DECL void gs_graphics_render_pass_destroy(gs_handle(gs_graphics_render_pass_t) hndl);
 GS_API_DECL void gs_graphics_pipeline_destroy(gs_handle(gs_graphics_pipeline_t) hndl);
 
 /* Resource In-Flight Update*/
 GS_API_DECL void gs_graphics_texture_request_update(gs_command_buffer_t* cb, gs_handle(gs_graphics_texture_t) hndl, gs_graphics_texture_desc_t* desc);
-GS_API_DECL void gs_graphics_buffer_request_update(gs_command_buffer_t* cb, gs_handle(gs_graphics_buffer_t) hndl, gs_graphics_buffer_desc_t* desc);
+GS_API_DECL void gs_graphics_vertex_buffer_request_update(gs_command_buffer_t* cb, gs_handle(gs_graphics_vertex_buffer_t) hndl, gs_graphics_vertex_buffer_desc_t* desc);
+GS_API_DECL void gs_graphics_index_buffer_request_update(gs_command_buffer_t* cb, gs_handle(gs_graphics_index_buffer_t) hndl, gs_graphics_index_buffer_desc_t* desc);
+GS_API_DECL void gs_graphics_uniform_buffer_request_update(gs_command_buffer_t* cb, gs_handle(gs_graphics_uniform_buffer_t) hndl, gs_graphics_uniform_buffer_desc_t* desc);
 
 /* Pipeline / Pass / Bind / Draw */
-GS_API_DECL void gs_graphics_begin_render_pass(gs_command_buffer_t* cb, gs_handle(gs_graphics_render_pass_t) hndl, gs_graphics_render_pass_action_t* actions, size_t actions_size);
+GS_API_DECL void gs_graphics_begin_render_pass(gs_command_buffer_t* cb, gs_handle(gs_graphics_render_pass_t) hndl);
 GS_API_DECL void gs_graphics_end_render_pass(gs_command_buffer_t* cb);
 GS_API_DECL void gs_graphics_set_viewport(gs_command_buffer_t* cb, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 GS_API_DECL void gs_graphics_set_view_scissor(gs_command_buffer_t* cb, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+GS_API_DECL void gs_graphics_clear(gs_command_buffer_t* cb, gs_graphics_clear_desc_t* desc);
 GS_API_DECL void gs_graphics_bind_pipeline(gs_command_buffer_t* cb, gs_handle(gs_graphics_pipeline_t) hndl);
-GS_API_DECL void gs_graphics_bind_bindings(gs_command_buffer_t* cb, gs_graphics_bind_desc_t* binds, size_t binds_size);
-GS_API_DECL void gs_graphics_draw(gs_command_buffer_t* cb, uint32_t start, uint32_t count);
+GS_API_DECL void gs_graphics_apply_bindings(gs_command_buffer_t* cb, gs_graphics_bind_desc_t* binds);
+GS_API_DECL void gs_graphics_draw(gs_command_buffer_t* cb, gs_graphics_draw_desc_t* desc);
+GS_API_DECL void gs_graphics_dispatch_compute(gs_command_buffer_t* cb, uint32_t num_x_groups, uint32_t num_y_groups, uint32_t num_z_groups);
 
 /* Submission (Main Thread) */
 GS_API_DECL void gs_graphics_submit_command_buffer(gs_command_buffer_t* cb);
-GS_API_DECL void gs_graphics_submit_frame();
 
 #ifndef GS_NO_SHORT_NAME
     
 typedef gs_handle(gs_graphics_shader_t)      gs_shader;
 typedef gs_handle(gs_graphics_texture_t)     gs_texture;
-typedef gs_handle(gs_graphics_buffer_t)      gs_gfxbuffer;
 typedef gs_handle(gs_graphics_render_pass_t) gs_renderpass;
 typedef gs_handle(gs_graphics_pipeline_t)    gs_pipeline;
 
@@ -4536,7 +5036,8 @@ typedef struct gs_asset_texture_t
     gs_graphics_texture_desc_t desc;
 } gs_asset_texture_t;
 
-GS_API_DECL void gs_asset_texture_load_from_file(const char* path, void* out, gs_graphics_texture_desc_t* desc, bool32_t flip_on_load, bool32_t keep_data);
+GS_API_DECL bool gs_asset_texture_load_from_file(const char* path, void* out, gs_graphics_texture_desc_t* desc, bool32_t flip_on_load, bool32_t keep_data);
+GS_API_DECL bool gs_asset_texture_load_from_memory(const void* memory, size_t sz, void* out, gs_graphics_texture_desc_t* desc, bool32_t flip_on_load, bool32_t keep_data);
 
 // Font
 typedef struct gs_baked_char_t
@@ -4552,7 +5053,8 @@ typedef struct gs_asset_font_t
     gs_asset_texture_t texture;
 } gs_asset_font_t; 
 
-GS_API_DECL void gs_asset_font_load_from_file(const char* path, void* out, uint32_t point_size);
+GS_API_DECL bool gs_asset_font_load_from_file(const char* path, void* out, uint32_t point_size);
+GS_API_DECL bool gs_asset_font_load_from_memory(const void* memory, size_t sz, void* out, uint32_t point_size);
 
 // Audio
 typedef struct gs_asset_audio_t
@@ -4560,7 +5062,84 @@ typedef struct gs_asset_audio_t
     gs_handle(gs_audio_source_t) hndl;
 } gs_asset_audio_t;
 
-GS_API_DECL void gs_asset_audio_load_from_file(const char* path, void* out);
+GS_API_DECL bool gs_asset_audio_load_from_file(const char* path, void* out);
+
+// Mesh
+gs_enum_decl(gs_asset_mesh_attribute_type,
+    GS_ASSET_MESH_ATTRIBUTE_TYPE_POSITION,
+    GS_ASSET_MESH_ATTRIBUTE_TYPE_NORMAL,
+    GS_ASSET_MESH_ATTRIBUTE_TYPE_TANGENT,
+    GS_ASSET_MESH_ATTRIBUTE_TYPE_JOINT,
+    GS_ASSET_MESH_ATTRIBUTE_TYPE_WEIGHT,
+    GS_ASSET_MESH_ATTRIBUTE_TYPE_TEXCOORD,
+    GS_ASSET_MESH_ATTRIBUTE_TYPE_COLOR
+);
+
+typedef struct gs_asset_mesh_layout_t {
+    gs_asset_mesh_attribute_type type;     // Type of attribute
+    uint32_t idx;                          // Optional index (for joint/weight/texcoord/color)
+} gs_asset_mesh_layout_t;
+
+typedef struct gs_asset_mesh_decl_t
+{
+    gs_asset_mesh_layout_t* layout;        // Mesh attribute layout array
+    size_t layout_size;                    // Size of mesh attribute layout array in bytes
+    size_t index_buffer_element_size;      // Size of index data size in bytes
+} gs_asset_mesh_decl_t;
+
+typedef struct gs_asset_mesh_primitive_t
+{
+    gs_handle(gs_graphics_vertex_buffer_t) vbo;
+    gs_handle(gs_graphics_index_buffer_t) ibo;
+    uint32_t count; 
+} gs_asset_mesh_primitive_t;
+
+typedef struct gs_asset_mesh_t
+{
+    gs_dyn_array(gs_asset_mesh_primitive_t) primitives;
+} gs_asset_mesh_t;
+
+// Structured/packed raw mesh data
+typedef struct gs_asset_mesh_raw_data_t 
+{
+    uint32_t prim_count;
+    size_t* vertex_sizes;
+    size_t* index_sizes;
+    void** vertices;
+    void** indices;
+} gs_asset_mesh_raw_data_t;
+
+GS_API_DECL bool gs_asset_mesh_load_from_file(const char* path, void* out, gs_asset_mesh_decl_t* decl, void* data_out, size_t data_size);
+GS_API_DECL bool gs_util_load_gltf_data_from_file(const char* path, gs_asset_mesh_decl_t* decl, gs_asset_mesh_raw_data_t** out, uint32_t* mesh_count);
+GS_API_DECL bool gs_util_load_gltf_data_from_memory(const void* memory, size_t sz, gs_asset_mesh_decl_t* decl, gs_asset_mesh_raw_data_t** out, uint32_t* mesh_count);
+
+// Material
+// How to do this? Materials really are utility types...
+// So should they be relegated to a utility file?
+/*
+    gs_util_material? 
+*/
+
+// Pipeline
+
+// Uniform
+
+/*
+    // Could pass in a mesh decl? Then it'll just give you back packed vertex/index data for each primitive?
+    GS_API_DECL gs_util_load_gltf_from_file(const char* path, gs_asset_mesh_decl_t* decl, uint32_t* primitive_count, void*** verticies, size_t** vertex_sizes, void*** indices, size_t** index_sizes);
+    
+    To use: 
+
+    // For primitives
+    uint32_t prim_count = 0;
+    size_t* vertex_sizes = NULL;
+    size_t* index_sizes = NULL;
+    float** vertices = NULL;
+    uint32_t** indices = NULL;
+
+    gs_asset_mesh_raw_data_t data = {};
+    gs_util_load_gltf_from_file("path", &decl, &data);
+*/
 
 /*==========================
 // GS_ENGINE / GS_APP
@@ -4580,6 +5159,15 @@ typedef struct gs_app_desc_t
     bool32 enable_vsync;
     bool32 is_running;
     void* user_data;
+
+    // Platform specific data
+    #ifdef GS_PLATFORM_ANDROID
+        struct {
+            void* activity;
+            const char* internal_data_path;
+        } android;
+    #endif
+
 } gs_app_desc_t;
 
 /*
@@ -4591,17 +5179,16 @@ typedef struct gs_app_desc_t
 */
 typedef struct gs_engine_context_t
 {
-    gs_platform_i* platform;
-    gs_graphics_i* graphics;
-    gs_audio_i* audio;
+    gs_platform_t* platform;
+    gs_graphics_t* graphics;
+    gs_audio_t* audio;
     gs_app_desc_t app;
 } gs_engine_context_t;
 
 typedef struct gs_engine_t
 {
     gs_engine_context_t ctx;
-    gs_result (* run)();
-    gs_result (* shutdown)();
+    void (* shutdown)();
 } gs_engine_t;
 
 /* Desc */
@@ -4612,6 +5199,10 @@ GS_API_DECL void gs_engine_destroy();
 GS_API_DECL gs_engine_t* gs_engine_instance();
 /* Desc */
 GS_API_DECL gs_engine_context_t* gs_engine_ctx();
+/* Desc */
+GS_API_DECL gs_app_desc_t* gs_engine_app();
+/* Desc */
+GS_API_DECL void gs_engine_frame();
 /* Desc */
 GS_API_DECL void gs_engine_quit();
 /* Desc */
@@ -4750,16 +5341,8 @@ gs_byte_buffer_write_to_file
     const char* output_path 
 )
 {
-    FILE* fp = fopen(output_path, "wb");
-    if (fp) 
-    {
-        int32_t ret = (int32_t)fwrite(buffer->data, sizeof(u8), buffer->size, fp);
-        if (ret == buffer->size)
-        {
-            return GS_RESULT_SUCCESS;
-        }
-    }
-    return GS_RESULT_FAILURE;
+
+    return gs_platform_write_file_contents(output_path, "wb", buffer->data, buffer->size);
 }
 
 gs_result 
@@ -4769,14 +5352,26 @@ gs_byte_buffer_read_from_file
     const char* file_path 
 )
 {
-    buffer->data = (u8*)gs_read_file_contents_into_string_null_term(file_path, "rb", (usize*)&buffer->size);
+    if (!buffer) return GS_RESULT_FAILURE;
+
+    if (buffer->data) {
+        gs_byte_buffer_free(buffer);
+    }
+
+    buffer->data = (u8*)gs_platform_read_file_contents(file_path, "rb", (size_t*)&buffer->size);
     if (!buffer->data) {
         gs_assert(false);   
         return GS_RESULT_FAILURE;
     }
+
     buffer->position = 0;
     buffer->capacity = buffer->size;
     return GS_RESULT_SUCCESS;
+}
+
+GS_API_DECL void gs_byte_buffer_memset(gs_byte_buffer_t* buffer, uint8_t val)
+{
+    memset(buffer->data, val, buffer->capacity);
 }
 
 /*=============================
@@ -4874,7 +5469,7 @@ gs_vec3 gs_camera_screen_to_world(gs_camera_t* cam, gs_vec3 coords, s32 view_wid
 gs_mat4 gs_camera_get_view_projection(gs_camera_t* cam, s32 view_width, s32 view_height)
 {
     gs_mat4 view = gs_camera_get_view(cam);
-    gs_mat4 proj = gs_camera_get_projection(cam, view_width, view_height);
+    gs_mat4 proj = gs_camera_get_proj(cam, view_width, view_height);
     return gs_mat4_mul(proj, view); 
 }
 
@@ -4886,7 +5481,7 @@ gs_mat4 gs_camera_get_view(gs_camera_t* cam)
     return gs_mat4_look_at(cam->transform.position, target, up);
 }
 
-gs_mat4 gs_camera_get_projection(gs_camera_t* cam, s32 view_width, s32 view_height)
+gs_mat4 gs_camera_get_proj(gs_camera_t* cam, s32 view_width, s32 view_height)
 {
     gs_mat4 proj_mat = gs_mat4_identity();
 
@@ -4929,7 +5524,7 @@ gs_mat4 gs_camera_get_projection(gs_camera_t* cam, s32 view_width, s32 view_heig
 
 void gs_camera_offset_orientation(gs_camera_t* cam, f32 yaw, f32 pitch)
 {
-    gs_quat x = gs_quat_angle_axis(gs_deg2rad(yaw), gs_v3(0.f, 1.f, 0.f));      // Absolute up
+    gs_quat x = gs_quat_angle_axis(gs_deg2rad(yaw), gs_v3(0.f, 1.f, 0.f));              // Absolute up
     gs_quat y = gs_quat_angle_axis(gs_deg2rad(pitch), gs_camera_right(cam));            // Relative right
     cam->transform.rotation = gs_quat_mul(gs_quat_mul(x, y), cam->transform.rotation);
 }
@@ -4938,31 +5533,58 @@ void gs_camera_offset_orientation(gs_camera_t* cam, f32 yaw, f32 pitch)
 // GS_UTIL
 =============================*/
 
-#define STB_DEFINE
+#ifndef GS_NO_STB_RECT_PACK
+    #define STB_RECT_PACK_IMPLEMENTATION
+#endif
+
+#ifndef GS_NO_STB_TRUETYPE
+    #define STB_TRUETYPE_IMPLEMENTATION
+#endif
+
+#ifndef GS_NO_STB_DEFINE
+    #define STB_DEFINE
+#endif
+
+#ifndef GS_NO_STB_IMAGE
+    #define STB_IMAGE_IMPLEMENTATION
+    #define STB_IMAGE_WRITE_IMPLEMENTATION
+#endif
+
+#ifndef GS_NO_CGLTF
+    #define CGLTF_IMPLEMENTATION
+#endif
+
+// STB
 #include "external/stb/stb.h"
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "external/stb/stb_image_write.h"
-
-#define STB_TRUETYPE_IMPLEMENTATION
 #include "external/stb/stb_truetype.h"
-
-#define STB_IMAGE_IMPLEMENTATION
 #include "external/stb/stb_image.h"
+
+// CGLTF
+#include "external/cgltf/cgltf.h"
 
 bool32_t gs_util_load_texture_data_from_file(const char* file_path, int32_t* width, int32_t* height, uint32_t* num_comps, void** data, bool32_t flip_vertically_on_load)
 {
+    size_t len = 0;
+    char* file_data = gs_platform_read_file_contents(file_path, "rb", &len);
+    gs_assert(file_data);
+    bool32_t ret = gs_util_load_texture_data_from_memory(file_data, len, width, height, num_comps, data, flip_vertically_on_load);
+    if (!ret) {
+        gs_println("Warning: could not load texture: %s", file_path);
+    }
+    gs_free(file_data);
+    return ret;
+}
+
+bool32_t gs_util_load_texture_data_from_memory(const void* memory, size_t sz, int32_t* width, int32_t* height, uint32_t* num_comps, void** data, bool32_t flip_vertically_on_load)
+{
     // Load texture data
     stbi_set_flip_vertically_on_load(flip_vertically_on_load);
-
-    // NOTE(john): For now, this data will always have 4 components, since STBI_rgb_alpha is being passed in as required components param. Could optimize this later.
-    *data = stbi_load(file_path, (s32*)width, (s32*)height, (s32*)num_comps, STBI_rgb_alpha);
-
+    *data =  stbi_load_from_memory((const stbi_uc*)memory, (int32_t)sz, (int32_t*)width, (int32_t*)height, (int32_t*)num_comps, STBI_rgb_alpha);
     if (!*data) {
-        gs_println("Warning: could not load texture: %s", file_path);
+        gs_free(*data);
         return false;
     }
-
     return true;
 }
 
@@ -4970,34 +5592,77 @@ bool32_t gs_util_load_texture_data_from_file(const char* file_path, int32_t* wid
 // GS_PLATFORM
 =============================*/
 
+// Default provided platform implementations (these will be removed eventually)
 #ifndef GS_PLATFORM_IMPL_CUSTOM
-    #define GS_PLATFORM_IMPL_GLFW
-    #include "impl/gs_platform_impl.h"
+
+    #if (defined GS_PLATFORM_WIN || defined GS_PLATFORM_APPLE || defined GS_PLATFORM_LINUX)
+
+        #define GS_PLATFORM_IMPL_GLFW
+
+    #elif (defined GS_PLATFORM_WEB)
+
+        #define GS_PLATFORM_IMPL_EMSCRIPTEN
+
+    #elif (defined GS_PLATFORM_ANDROID)
+
+        #define GS_PLATFORM_IMPL_ANDROID
+
+	#endif
 #endif
+
+#ifdef GS_PLATFORM_IMPL_FILE
+    #include GS_PLATFORM_IMPL_FILE
+#endif
+
+#include "impl/gs_platform_impl.h"
 
 /*=============================
 // GS_GRAPHICS
 =============================*/
 
 #ifndef GS_GRAPHICS_IMPL_CUSTOM
-    #define GS_GRAPHICS_IMPL_OPENGL
-    #include "impl/gs_graphics_impl.h"
+
+    #if (defined GS_PLATFORM_WIN || defined GS_PLATFORM_APPLE || defined GS_PLATFORM_LINUX)
+
+        #define GS_GRAPHICS_IMPL_OPENGL_CORE
+
+    #else
+
+        #define GS_GRAPHICS_IMPL_OPENGL_ES
+
+    #endif
+
 #endif
+
+#include "impl/gs_graphics_impl.h"
 
 /*=============================
 // GS_AUDIO
 =============================*/
 
 #ifndef GS_AUDIO_IMPL_CUSTOM
+
     #define GS_AUDIO_IMPL_MINIAUDIO
-    #include "impl/gs_audio_impl.h"
+
 #endif
+
+#include "impl/gs_audio_impl.h"
 
 /*==========================
 // GS_ASSET_TYPES
 ==========================*/
 
-void gs_asset_texture_load_from_file(const char* path, void* out, gs_graphics_texture_desc_t* desc, bool32_t flip_on_load, bool32_t keep_data)
+bool gs_asset_texture_load_from_file(const char* path, void* out, gs_graphics_texture_desc_t* desc, bool32_t flip_on_load, bool32_t keep_data)
+{
+    size_t len = 0;
+    char* file_data = gs_platform_read_file_contents(path, "rb", &len);
+    gs_assert(file_data);
+    bool32_t ret = gs_asset_texture_load_from_memory(file_data, len, out, desc, flip_on_load, keep_data);
+    gs_free(file_data);
+    return ret;
+}
+
+bool gs_asset_texture_load_from_memory(const void* memory, size_t sz, void* out, gs_graphics_texture_desc_t* desc, bool32_t flip_on_load, bool32_t keep_data)
 {
     gs_asset_texture_t* t = (gs_asset_texture_t*)out; 
 
@@ -5015,12 +5680,11 @@ void gs_asset_texture_load_from_file(const char* path, void* out, gs_graphics_te
 
     // Load texture data
     int32_t num_comps = 0;
-    bool32_t loaded = gs_util_load_texture_data_from_file(path, (int32_t*)&t->desc.width, 
+    bool32_t loaded = gs_util_load_texture_data_from_memory(memory, sz, (int32_t*)&t->desc.width, 
         (int32_t*)&t->desc.height, (uint32_t*)&num_comps, (void**)&t->desc.data, flip_on_load);
 
     if (!loaded) {
-        gs_println("Warning: could not load texture: %s", path);
-        return;
+        return false;
     }
 
     t->hndl = gs_graphics_texture_create(&t->desc);
@@ -5029,19 +5693,38 @@ void gs_asset_texture_load_from_file(const char* path, void* out, gs_graphics_te
         gs_free(t->desc.data);
         t->desc.data = NULL;
     }
+
+    return true;
 }
 
-void gs_asset_font_load_from_file(const char* path, void* out, uint32_t point_size)
-{ 
-    gs_asset_font_t* f = (gs_asset_font_t*)out;
-
+bool gs_asset_font_load_from_file(const char* path, void* out, uint32_t point_size)
+{
+    size_t len = 0;
+    char* ttf = gs_platform_read_file_contents(path, "rb", &len);
     if (!point_size) {
         gs_println("Warning: Font: %s: Point size not declared. Setting to default 16.", path);
         point_size = 16;
     }
+    bool ret = gs_asset_font_load_from_memory(ttf, len, out, point_size);
+    if (!ret) {
+        gs_println("Font Failed to Load: %s", path);
+    } else {
+        gs_println("Font Successfully Loaded: %s", path);
+    }
+    gs_free(ttf);
+    return ret;
+}
+
+bool gs_asset_font_load_from_memory(const void* memory, size_t sz, void* out, uint32_t point_size)
+{ 
+    gs_asset_font_t* f = (gs_asset_font_t*)out;
+
+    if (!point_size) {
+        gs_println("Warning: Font: Point size not declared. Setting to default 16.");
+        point_size = 16;
+    }
 
     stbtt_fontinfo font = gs_default_val();
-    char* ttf = gs_read_file_contents_into_string_null_term(path, "rb", NULL);
     const u32 w = 512;
     const u32 h = 512;
     const u32 num_comps = 4;
@@ -5049,7 +5732,7 @@ void gs_asset_font_load_from_file(const char* path, void* out, uint32_t point_si
     u8* flipmap = (u8*)gs_malloc(w * h * num_comps);
     memset(alpha_bitmap, 0, w * h);
     memset(flipmap, 0, w * h * num_comps);
-    s32 v = stbtt_BakeFontBitmap((u8*)ttf, 0, (float)point_size, alpha_bitmap, w, h, 32, 96, (stbtt_bakedchar*)f->glyphs); // no guarantee this fits!
+    s32 v = stbtt_BakeFontBitmap((u8*)memory, 0, (float)point_size, alpha_bitmap, w, h, 32, 96, (stbtt_bakedchar*)f->glyphs); // no guarantee this fits!
 
     // Flip texture
     u32 r = h - 1;
@@ -5080,31 +5763,398 @@ void gs_asset_font_load_from_file(const char* path, void* out, uint32_t point_si
     f->texture.desc = desc;
     f->texture.desc.data = NULL;
 
+    bool success = false;
     if (v == 0) {
-        gs_println("Font Failed to Load: %s, %d", path, v);
+        gs_println("Font Failed to Load: %d", v);
     }
     else {
-        gs_println("Font Successfully Load: %s, %d", path, v);
+        gs_println("Font Successfully Loaded: %d", v);
+        success = true;
     }
 
-    gs_free(ttf);
     gs_free(alpha_bitmap);
     gs_free(flipmap);
+    return success;
 }
 
 // Audio
-void gs_asset_audio_load_from_file(const char* path, void* out)
+bool gs_asset_audio_load_from_file(const char* path, void* out)
 {
     gs_asset_audio_t* a = (gs_asset_audio_t*)out;
     a->hndl = gs_audio_load_from_file(path);
+    return gs_handle_is_valid(a->hndl);
+}
+
+bool gs_util_load_gltf_data_from_file(const char* path, gs_asset_mesh_decl_t* decl, gs_asset_mesh_raw_data_t** out, uint32_t* mesh_count)
+{
+    // Use cgltf like a boss
+    cgltf_options options = gs_default_val();
+    size_t len = 0;
+    char* file_data = gs_platform_read_file_contents(path, "rb", &len);
+    gs_println("Loading GLTF: %s", path);
+
+    cgltf_data* data = NULL;
+    cgltf_result result = cgltf_parse(&options, file_data, (cgltf_size)len, &data);
+    gs_free(file_data);
+
+    if (result != cgltf_result_success) {
+        gs_println("Mesh:LoadFromFile:Failed load gltf");
+        cgltf_free(data);
+        return false;
+    }
+
+    // Load buffers as well
+    result = cgltf_load_buffers(&options, data, path);
+    if (result != cgltf_result_success) {
+        cgltf_free(data);
+        gs_println("Mesh:LoadFromFile:Failed to load buffers");
+        return false;
+    }
+
+    // Type of index data
+    size_t index_element_size = decl ? decl->index_buffer_element_size : 0;
+
+    // Temporary structures
+    gs_dyn_array(gs_vec3) positions = NULL;
+    gs_dyn_array(gs_vec3) normals = NULL;
+    gs_dyn_array(gs_vec3) tangents = NULL;
+    gs_dyn_array(gs_color_t) colors = NULL;
+    gs_dyn_array(gs_vec2) uvs = NULL;
+    gs_dyn_array(gs_asset_mesh_layout_t) layouts = NULL;
+    gs_byte_buffer_t v_data = gs_byte_buffer_new();
+    gs_byte_buffer_t i_data = gs_byte_buffer_new();
+
+    // Allocate memory for buffers
+    *mesh_count = data->meshes_count;
+    *out = (gs_asset_mesh_raw_data_t*)gs_malloc(data->meshes_count * sizeof(gs_asset_mesh_raw_data_t));
+    memset(*out, 0, sizeof(gs_asset_mesh_raw_data_t) * data->meshes_count);
+
+    // Iterate through meshes in data
+    for (uint32_t i = 0; i < data->meshes_count; ++i)
+    {
+        // Initialize mesh data
+        gs_asset_mesh_raw_data_t* mesh = out[i];
+        mesh->prim_count = data->meshes[i].primitives_count;
+        mesh->vertex_sizes = (size_t*)gs_malloc(sizeof(size_t) * mesh->prim_count);
+        mesh->index_sizes = (size_t*)gs_malloc(sizeof(size_t) * mesh->prim_count);
+        mesh->vertices = (void**)gs_malloc(sizeof(size_t) * mesh->prim_count);
+        mesh->indices = (void**)gs_malloc(sizeof(size_t) * mesh->prim_count);
+
+        // For each primitive in mesh 
+        for (uint32_t p = 0; p < data->meshes[i].primitives_count; ++p)
+        {
+            // Clear temp data from previous use
+            gs_dyn_array_clear(positions);
+            gs_dyn_array_clear(normals);
+            gs_dyn_array_clear(tangents);
+            gs_dyn_array_clear(uvs);
+            gs_dyn_array_clear(colors);
+            gs_dyn_array_clear(layouts);
+            gs_byte_buffer_clear(&v_data);
+            gs_byte_buffer_clear(&i_data);
+
+            #define __GLTF_PUSH_ATTR(ATTR, TYPE, COUNT, ARR, ARR_TYPE, LAYOUTS, LAYOUT_TYPE)\
+                do {\
+                    int32_t N = 0;\
+                    TYPE* BUF = (TYPE*)ATTR->buffer_view->buffer->data + ATTR->buffer_view->offset/sizeof(TYPE) + ATTR->offset/sizeof(TYPE);\
+                    gs_assert(BUF);\
+                    TYPE V[COUNT] = gs_default_val();\
+                    /* For each vertex */\
+                    for (uint32_t k = 0; k < ATTR->count; k++)\
+                    {\
+                        /* For each element */\
+                        for (int l = 0; l < COUNT; l++) {\
+                            V[l] = BUF[N + l];\
+                        }\
+                        N += (int32_t)(ATTR->stride/sizeof(TYPE));\
+                        /* Add to temp data array */\
+                        ARR_TYPE ELEM = gs_default_val();\
+                        memcpy((void*)&ELEM, (void*)V, sizeof(ARR_TYPE));\
+                        gs_dyn_array_push(ARR, ELEM);\
+                    }\
+                    /* Push into layout */\
+                    gs_asset_mesh_layout_t LAYOUT = gs_default_val();\
+                    LAYOUT.type = LAYOUT_TYPE;\
+                    gs_dyn_array_push(LAYOUTS, LAYOUT);\
+                } while (0)
+
+            // For each attribute in primitive
+            for (uint32_t a = 0; a < data->meshes[i].primitives[p].attributes_count; ++a)
+            {
+                // Accessor for attribute data
+                cgltf_accessor* attr = data->meshes[i].primitives[p].attributes[a].data;
+
+                // Switch on type for reading data
+                switch (data->meshes[i].primitives[p].attributes[a].type)
+                {
+                    case cgltf_attribute_type_position: {
+                        __GLTF_PUSH_ATTR(attr, float, 3, positions, gs_vec3, layouts, GS_ASSET_MESH_ATTRIBUTE_TYPE_POSITION);
+                    } break;
+
+                    case cgltf_attribute_type_normal: {
+                        __GLTF_PUSH_ATTR(attr, float, 3, normals, gs_vec3, layouts, GS_ASSET_MESH_ATTRIBUTE_TYPE_NORMAL);
+                    } break;
+
+                    case cgltf_attribute_type_tangent: {
+                        __GLTF_PUSH_ATTR(attr, float, 3, tangents, gs_vec3, layouts, GS_ASSET_MESH_ATTRIBUTE_TYPE_TANGENT);
+                    } break;
+
+                    case cgltf_attribute_type_texcoord: {
+                        __GLTF_PUSH_ATTR(attr, float, 2, uvs, gs_vec2, layouts, GS_ASSET_MESH_ATTRIBUTE_TYPE_TEXCOORD);
+                    } break;
+
+                    case cgltf_attribute_type_color: {
+                        __GLTF_PUSH_ATTR(attr, uint8_t, 4, colors, gs_color_t, layouts, GS_ASSET_MESH_ATTRIBUTE_TYPE_COLOR);
+                    } break;
+
+                    // Not sure what to do with these for now
+                    case cgltf_attribute_type_joints: 
+                    {
+                        // Push into layout
+                        gs_asset_mesh_layout_t layout = gs_default_val();
+                        layout.type = GS_ASSET_MESH_ATTRIBUTE_TYPE_JOINT;
+                        gs_dyn_array_push(layouts, layout);
+                    } break;
+
+                    case cgltf_attribute_type_weights:
+                    {
+                        // Push into layout
+                        gs_asset_mesh_layout_t layout = gs_default_val();
+                        layout.type = GS_ASSET_MESH_ATTRIBUTE_TYPE_WEIGHT;
+                        gs_dyn_array_push(layouts, layout);
+                    } break;
+
+                    // Shouldn't hit here...   
+                    default: 
+                    {
+                    } break;
+                }
+            }
+
+            // Indices for primitive
+            cgltf_accessor* acc = data->meshes[i].primitives[p].indices;
+
+            #define __GLTF_PUSH_IDX(BB, ACC, TYPE)\
+                do {\
+                    int32_t n = 0;\
+                    TYPE* buf = (TYPE*)acc->buffer_view->buffer->data + acc->buffer_view->offset/sizeof(TYPE) + acc->offset/sizeof(TYPE);\
+                    gs_assert(buf);\
+                    TYPE v = 0;\
+                    /* For each index */\
+                    for (uint32_t k = 0; k < acc->count; k++) {\
+                        /* For each element */\
+                        for (int l = 0; l < 1; l++) {\
+                            v = buf[n + l];\
+                        }\
+                        n += (int32_t)(acc->stride/sizeof(TYPE));\
+                        /* Add to temp positions array */\
+                        switch (index_element_size) {\
+                            case 0: gs_byte_buffer_write(BB, uint16_t, (uint16_t)v); break;\
+                            case 2: gs_byte_buffer_write(BB, uint16_t, (uint16_t)v); break;\
+                            case 4: gs_byte_buffer_write(BB, uint32_t, (uint32_t)v); break;\
+                        }\
+                    }\
+                } while (0)
+
+            // If indices are available
+            if (acc) 
+            {
+                switch (acc->component_type) 
+                {
+                    case cgltf_component_type_r_8:   __GLTF_PUSH_IDX(&i_data, acc, int8_t);   break;
+                    case cgltf_component_type_r_8u:  __GLTF_PUSH_IDX(&i_data, acc, uint8_t);  break;
+                    case cgltf_component_type_r_16:  __GLTF_PUSH_IDX(&i_data, acc, int16_t);  break;
+                    case cgltf_component_type_r_16u: __GLTF_PUSH_IDX(&i_data, acc, uint16_t); break;
+                    case cgltf_component_type_r_32u: __GLTF_PUSH_IDX(&i_data, acc, uint32_t); break;
+                    case cgltf_component_type_r_32f: __GLTF_PUSH_IDX(&i_data, acc, float);    break;
+
+                    // Shouldn't hit here
+                    default: {
+                    } break;
+                }
+            }
+            else 
+            {
+                // Iterate over positions size, then just push back indices
+                for (uint32_t i = 0; i < gs_dyn_array_size(positions); ++i) 
+                {
+                    switch (index_element_size)
+                    {
+                        default:
+                        case 0: gs_byte_buffer_write(&i_data, uint16_t, (uint16_t)i); break;
+                        case 2: gs_byte_buffer_write(&i_data, uint16_t, (uint16_t)i); break;
+                        case 4: gs_byte_buffer_write(&i_data, uint32_t, (uint32_t)i); break;
+                    }
+                }
+            }
+
+            bool warnings[gs_enum_count(gs_asset_mesh_attribute_type)] = gs_default_val();
+
+            // Grab mesh layout pointer to use
+            gs_asset_mesh_layout_t* layoutp = decl ? decl->layout : layouts;
+            uint32_t layout_ct = decl ? decl->layout_size / sizeof(gs_asset_mesh_layout_t) : gs_dyn_array_size(layouts);
+
+            // Iterate layout to fill data buffers according to provided layout
+            {
+                uint32_t vct = 0; 
+                vct = gs_max(vct, gs_dyn_array_size(positions)); 
+                vct = gs_max(vct, gs_dyn_array_size(colors)); 
+                vct = gs_max(vct, gs_dyn_array_size(uvs));
+                vct = gs_max(vct, gs_dyn_array_size(normals));
+                vct = gs_max(vct, gs_dyn_array_size(tangents));
+
+                #define __GLTF_WRITE_DATA(IT, VDATA, ARR, ARR_TYPE, ARR_DEF_VAL, LAYOUT_TYPE)\
+                    do {\
+                        /* Grab data at index, if available */\
+                        if (IT < gs_dyn_array_size(ARR)) {\
+                            gs_byte_buffer_write(&(VDATA), ARR_TYPE, ARR[IT]);\
+                        }\
+                        else {\
+                            /* Write default value and give warning.*/\
+                            gs_byte_buffer_write(&(VDATA), ARR_TYPE, ARR_DEF_VAL);\
+                            if (!warnings[LAYOUT_TYPE]) {\
+                                gs_println("Warning:Mesh:LoadFromFile:%s:Index out of range.", #LAYOUT_TYPE);\
+                                warnings[LAYOUT_TYPE] = true;\
+                            }\
+                        }\
+                    } while (0)
+
+                for (uint32_t it = 0; it < vct; ++it)
+                {
+                    // For each attribute in layout
+                    for (uint32_t l = 0; l < layout_ct; ++l)
+                    {
+                        switch (layoutp[l].type)
+                        {
+                            case GS_ASSET_MESH_ATTRIBUTE_TYPE_POSITION: {
+                                __GLTF_WRITE_DATA(it, v_data, positions, gs_vec3, gs_v3(0.f, 0.f, 0.f), GS_ASSET_MESH_ATTRIBUTE_TYPE_POSITION); 
+                            } break;
+
+                            case GS_ASSET_MESH_ATTRIBUTE_TYPE_TEXCOORD: {
+                                __GLTF_WRITE_DATA(it, v_data, uvs, gs_vec2, gs_v2(0.f, 0.f), GS_ASSET_MESH_ATTRIBUTE_TYPE_TEXCOORD); 
+                            } break;
+
+                            case GS_ASSET_MESH_ATTRIBUTE_TYPE_COLOR: {
+                                __GLTF_WRITE_DATA(it, v_data, colors, gs_color_t, GS_COLOR_WHITE, GS_ASSET_MESH_ATTRIBUTE_TYPE_COLOR); 
+                            } break;
+
+                            case GS_ASSET_MESH_ATTRIBUTE_TYPE_NORMAL: {
+                                __GLTF_WRITE_DATA(it, v_data, normals, gs_vec3, gs_v3(0.f, 0.f, 1.f), GS_ASSET_MESH_ATTRIBUTE_TYPE_NORMAL); 
+                            } break;
+
+                            case GS_ASSET_MESH_ATTRIBUTE_TYPE_TANGENT: {
+                                __GLTF_WRITE_DATA(it, v_data, tangents, gs_vec3, gs_v3(0.f, 1.f, 0.f), GS_ASSET_MESH_ATTRIBUTE_TYPE_TANGENT); 
+                            } break;
+
+                            default:
+                            {
+                            } break;
+                        }
+                    }
+                }
+            }
+
+            // Add to out data
+            mesh->vertices[p] = gs_malloc(v_data.size);
+            mesh->indices[p] = gs_malloc(i_data.size);
+            mesh->vertex_sizes[p] = v_data.size;
+            mesh->index_sizes[p] = i_data.size;
+
+            // Copy data
+            memcpy(mesh->vertices[p], v_data.data, v_data.size);
+            memcpy(mesh->indices[p], i_data.data, i_data.size);
+        }
+    }
+
+    // Free all data at the end
+    cgltf_free(data);
+    gs_dyn_array_free(positions);
+    gs_dyn_array_free(normals);
+    gs_dyn_array_free(tangents);
+    gs_dyn_array_free(colors);
+    gs_dyn_array_free(uvs);
+    gs_dyn_array_free(layouts);
+    gs_byte_buffer_free(&v_data);
+    gs_byte_buffer_free(&i_data);
+    return true;
+}
+
+bool gs_asset_mesh_load_from_file(const char* path, void* out, gs_asset_mesh_decl_t* decl, void* data_out, size_t data_size)
+{
+    // Cast mesh data to use
+    gs_asset_mesh_t* mesh = (gs_asset_mesh_t*)out;
+
+    if (!gs_platform_file_exists(path)) {
+        gs_println("Warning:MeshLoadFromFile:File does not exist: %s", path);
+        return false;
+    }
+
+    // Mesh data to fill out
+    uint32_t mesh_count = 0;
+    gs_asset_mesh_raw_data_t* meshes = NULL;
+
+    // Get file extension from path
+    gs_transient_buffer(file_ext, 32);
+    gs_platform_file_extension(file_ext, 32, path);
+
+    // GLTF
+    if (gs_string_compare_equal(file_ext, "gltf"))
+    {
+        gs_util_load_gltf_data_from_file(path, decl, &meshes, &mesh_count);
+    }
+    else 
+    {
+        gs_println("Warning:MeshLoadFromFile:File extension not supported: %s, file: %s", file_ext, path);
+        return false;
+    }
+
+    // For now, handle meshes with only single mesh count
+    if (mesh_count != 1) {
+        // Error
+        // Free all the memory
+        return false;
+    }
+
+    // Process all mesh data, add meshes
+    for (uint32_t i = 0; i < mesh_count; ++i)
+    {
+        gs_asset_mesh_raw_data_t* m = &meshes[i];
+
+        for (uint32_t p = 0; p < m->prim_count; ++p)
+        {
+            // Construct primitive
+            gs_asset_mesh_primitive_t prim = gs_default_val();
+            prim.count = m->index_sizes[p] / sizeof(uint16_t);
+
+            // Vertex buffer decl
+            gs_graphics_vertex_buffer_desc_t vdesc = gs_default_val();
+            vdesc.data = m->vertices[p];
+            vdesc.size = m->vertex_sizes[p];
+
+            // Construct vertex buffer for primitive
+            prim.vbo = gs_graphics_vertex_buffer_create(&vdesc);
+
+            // Index buffer decl
+            gs_graphics_index_buffer_desc_t idesc = gs_default_val();
+            idesc.data = m->indices[p];
+            idesc.size = m->index_sizes[p];
+
+            // Construct index buffer for primitive
+            prim.ibo = gs_graphics_index_buffer_create(&idesc);
+
+            // Add primitive to mesh
+            gs_dyn_array_push(mesh->primitives, prim);
+        } 
+    }
+
+    // Free all mesh data
+    return true;
 }
 
 /*=============================
 // GS_ENGINE
 =============================*/
 
-gs_result gs_engine_run();
-gs_result gs_engine_shutdown();
 void gs_default_app_func();
 void gs_default_main_window_close_callback(void* window);
 
@@ -5131,8 +6181,7 @@ gs_engine_t* gs_engine_create(gs_app_desc_t app_desc)
         gs_engine_instance()->ctx.app = app_desc;
 
         // Set up function pointers
-        gs_engine_instance()->run       = &gs_engine_run;
-        gs_engine_instance()->shutdown  = &gs_engine_shutdown;
+        gs_engine_instance()->shutdown  = &gs_engine_destroy;
 
         // Need to have video settings passed down from user
         gs_engine_subsystem(platform) = gs_platform_create();
@@ -5183,82 +6232,82 @@ gs_engine_context_t* gs_engine_ctx()
     return &gs_engine_instance()->ctx;
 }
 
-gs_result gs_engine_run()
+gs_app_desc_t* gs_engine_app()
 {
-    // Main engine loop
-    while (true)
-    {
-        // TODO(john): Get rid of these...
-        static uint32_t curr_ticks = 0; 
-        static uint32_t prev_ticks = 0;
-
-        // Cache platform pointer
-        gs_platform_i* platform = gs_engine_subsystem(platform);
-
-        // Cache times at start of frame
-        platform->time.current  = gs_platform_elapsed_time();
-        platform->time.update   = platform->time.current - platform->time.previous;
-        platform->time.previous = platform->time.current;
-
-        // Update platform input from previous frame        
-        gs_platform_update_input(&platform->input);
-
-        // Process input for this frame
-        if (gs_platform_process_input(&platform->input) != GS_RESULT_IN_PROGRESS)
-        {
-            return (gs_engine_instance()->shutdown());
-        }
-
-        // Process application context
-        gs_engine_instance()->ctx.app.update();
-        if (!gs_engine_instance()->ctx.app.is_running) 
-        {
-            // Shutdown engine and return
-            return (gs_engine_instance()->shutdown());
-        }
-
-        // NOTE(John): This won't work forever. Must change eventually.
-        // Swap all platform window buffers? Sure...
-        for 
-        (
-            gs_slot_array_iter it = 0;
-            gs_slot_array_iter_valid(platform->windows, it);
-            gs_slot_array_iter_advance(platform->windows, it)
-        )
-        {
-            gs_platform_window_swap_buffer(it);
-        }
-
-        // Frame locking
-        platform->time.current  = gs_platform_elapsed_time();
-        platform->time.render   = platform->time.current - platform->time.previous;
-        platform->time.previous = platform->time.current;
-        platform->time.frame    = platform->time.update + platform->time.render;            // Total frame time
-        platform->time.delta    = platform->time.frame / 1000.f;
-
-        float target = (1000.f / platform->time.max_fps);
-
-        if (platform->time.frame < target)
-        {
-            gs_platform_sleep((float)(target - platform->time.frame));
-            
-            platform->time.current = gs_platform_elapsed_time();
-            double wait_time = platform->time.current - platform->time.previous;
-            platform->time.previous = platform->time.current;
-            platform->time.frame += wait_time;
-            platform->time.delta = platform->time.frame / 1000.f;
-        }
-    }
-
-    // Shouldn't hit here
-    gs_assert(false);
-    return GS_RESULT_FAILURE;
+    return &gs_engine_instance()->ctx.app;
 }
 
-gs_result gs_engine_shutdown()
+// Define main frame function for engine to step
+// Get rid of this eventually and just allow for the internal platform layer to decide how to update.
+GS_API_DECL void gs_engine_frame()
+{
+    // Remove these...
+    static uint32_t curr_ticks = 0; 
+    static uint32_t prev_ticks = 0;
+
+    // Cache platform pointer
+    gs_platform_t* platform = gs_engine_subsystem(platform);
+
+    // Cache times at start of frame
+    platform->time.current  = gs_platform_elapsed_time();
+    platform->time.update   = platform->time.current - platform->time.previous;
+    platform->time.previous = platform->time.current;
+
+    // Update platform and process input
+    gs_platform_update(platform);
+    if (!gs_engine_instance()->ctx.app.is_running) {
+        gs_engine_instance()->shutdown();
+        return;
+    }
+
+    // Process application context
+    gs_engine_instance()->ctx.app.update();
+    if (!gs_engine_instance()->ctx.app.is_running) {
+        gs_engine_instance()->shutdown();
+        return;
+    }
+
+    // Clear all platform events
+    gs_dyn_array_clear(platform->events);
+
+    // NOTE(John): This won't work forever. Must change eventually.
+    // Swap all platform window buffers? Sure...
+    for 
+    (
+        gs_slot_array_iter it = 0;
+        gs_slot_array_iter_valid(platform->windows, it);
+        gs_slot_array_iter_advance(platform->windows, it)
+    )
+    {
+        gs_platform_window_swap_buffer(it);
+    }
+
+    // Frame locking (not sure if this should be done here, but it is what it is)
+    platform->time.current  = gs_platform_elapsed_time();
+    platform->time.render   = platform->time.current - platform->time.previous;
+    platform->time.previous = platform->time.current;
+    platform->time.frame    = platform->time.update + platform->time.render;            // Total frame time
+    platform->time.delta    = platform->time.frame / 1000.f;
+
+    float target = (1000.f / platform->time.max_fps);
+
+    if (platform->time.frame < target)
+    {
+        gs_platform_sleep((float)(target - platform->time.frame));
+        
+        platform->time.current = gs_platform_elapsed_time();
+        double wait_time = platform->time.current - platform->time.previous;
+        platform->time.previous = platform->time.current;
+        platform->time.frame += wait_time;
+        platform->time.delta = platform->time.frame / 1000.f;
+    }
+}
+
+void gs_engine_destroy()
 {
     // Shutdown application
     gs_engine_ctx()->app.shutdown();
+    gs_engine_ctx()->app.is_running = false;
 
     // Shutdown subsystems
     gs_graphics_shutdown(gs_engine_subsystem(graphics));
@@ -5269,12 +6318,6 @@ gs_result gs_engine_shutdown()
 
     gs_platform_shutdown(gs_engine_subsystem(platform)); 
     gs_platform_destroy(gs_engine_subsystem(platform));
-
-    // Free engine
-    gs_free(__g_engine_instance);
-    __g_engine_instance = NULL;
-
-    return GS_RESULT_SUCCESS;
 }
 
 void gs_default_app_func()
@@ -5289,33 +6332,154 @@ void gs_default_main_window_close_callback(void* window)
 
 void gs_engine_quit()
 {
+#ifndef GS_PLATFORM_WEB
     gs_engine_instance()->ctx.app.is_running = false;
+#endif
 }
-
-/* Main entry point */
-#ifndef GS_NO_HIJACK_MAIN
-
-    int32_t main(int32_t argv, char** argc)
-    {
-        gs_engine_create(gs_main(argv, argc))->run();
-        return 0;
-    }
-
-#endif // GS_NO_HIJACK_MAIN
 
 #undef GS_IMPL
 #endif // GS_IMPL
 
-#ifdef __cplusplus
-}
-#endif // c++
+// #ifdef __cplusplus
+// }
+// #endif // c++
 
 #endif // __GS_INCLUDED_H__
 
-
-
-
 /*
+    Layout decl
+
+    // Pipeline should have layout desc for vertices?
+    // Or should it have layout for EACH buffer?
+        
+    non-interleaved vertex data
+    have to be able to specific stride/offset for vertex layouts
+
+    What are ways to interleave data?
+
+    layout descriptor? 
+
+    gs_vertex_attribute_type layouts[] = 
+    {
+
+    };
+
+    // Need to codify strides/offsets/divisors
+
+    // This can hold multiple layouts
+    gs_vertex_layout_desc_t layout = 
+    {
+        .layouts = layouts, 
+        .size = sizeof(layouts) 
+    };
+
+    Don't want to have to make user calculate strides, right?
+
+    // If you don't provide manual stride/offset, then it'll calculate it for you based on layout?
+
+    #version 330 core
+    layout (location = 0) in vec2 aPos;
+    layout (location = 1) in vec3 aColor;
+    layout (location = 2) in vec2 aOffset;
+
+    out vec3 fColor;
+
+    void main()
+    {
+        gl_Position = vec4(aPos + aOffset, 0.0, 1.0);
+        fColor = aColor;
+    }
+
+    typedef struct gs_vertex_attribute_layout_desc_t {
+        gs_vertex_attribute_type format; 
+        size_t stride;
+        size_t offset;
+        size_t divisor;
+    } gs_vertex_attribute_layout_desc_t;
+
+    gs_vertex_attribute_layout_desc_t layout[] = {
+        {.format = GS_VERTEX_ATTRIBUTE_FLOAT2},
+        {.format = GS_VERTEX_ATTRIBUTE_FLOAT3},
+        {.format = GS_VERTEX_ATTRIBUTE_FLOAT2, .stride = 2 * sizeof(float), .offset = 0, .divisor = 1}
+    };
+
+    What about non-interleaved data? Almost would need to provide an offset.
+    It's specific to the data itself, so have to provide manual offsets for data in binding data
+
+    gs_graphics_bind_desc_t binds[] = {
+        {.type = GS_GRAPHICS_BIND_VERTEX_BUFFER, .buffer = , .offset = };
+    }
+
+    gs_graphics_bind_desc_t binds[] = {
+        (gs_graphics_bind_desc_t){.type = GS_GRAPHICS_BIND_VERTEX_BUFFER, .buffer = vbo, .offset = ...},
+        (gs_graphics_bind_desc_t){.type = GS_GRAPHICS_BIND_VERTEX_BUFFER, .buffer = vbo, .offset = ...},
+    };
+
+    .layout = {
+        .attributes = &(){
+            {.format = GS_VERTEX_ATTRIBUTE_FLOAT2},
+            {.format = GS_VERTEX_ATTRIBUTE_FLOAT2},
+            {.format = GS_VERTEX_ATTRIBUTE_FLOAT4, .stride = 64, .offset =, .divisor = }
+        } 
+    };
+
+    sg_pipeline pip = sg_make_pipeline(&(sg_pipeline_desc){
+        .shader = shd,
+        .layout = {
+            .attrs = {
+                [0].format=SG_VERTEXFORMAT_FLOAT3,
+                [1].format=SG_VERTEXFORMAT_FLOAT4
+            }
+        }
+    });
+
+    .layout = {
+        .attrs = attrs, 
+        .attr_size = sizeof(attrs), 
+        .strides = strides, 
+        .stride_size = sizeof(strides),
+
+    }
+
+    sg_pipeline pip = sg_make_pipeline(&(sg_pipeline_desc){
+        .layout = {
+            .buffers = {
+                [0] = { .stride = 28 },
+                [1] = { .stride = 12, .step_func=SG_VERTEXSTEP_PER_INSTANCE }
+            },
+            .attrs = {
+                [0] = { .offset = 0,  .format=SG_VERTEXFORMAT_FLOAT3, .buffer_index=0 },
+                [1] = { .offset = 12, .format=SG_VERTEXFORMAT_FLOAT4, .buffer_index=0 },
+                [2] = { .offset = 0,  .format=SG_VERTEXFORMAT_FLOAT3, .buffer_index=1 }
+            }
+        },
+        .shader = shd,
+        .index_type = SG_INDEXTYPE_UINT16,
+        .depth_stencil = {
+            .depth_compare_func = SG_COMPAREFUNC_LESS_EQUAL,
+            .depth_write_enabled = true
+        },
+        .rasterizer.cull_mode = SG_CULLMODE_BACK
+    });
+
+    float quadVertices[] = {
+        // positions     // colors
+        -0.05f,  0.05f,  1.0f, 0.0f, 0.0f,
+         0.05f, -0.05f,  0.0f, 1.0f, 0.0f,
+        -0.05f, -0.05f,  0.0f, 0.0f, 1.0f,
+
+        -0.05f,  0.05f,  1.0f, 0.0f, 0.0f,
+         0.05f, -0.05f,  0.0f, 1.0f, 0.0f,
+         0.05f,  0.05f,  0.0f, 1.0f, 1.0f
+    };
+
+    // also set instance data
+    glEnableVertexAttribArray(2);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO); // this attribute comes from a different vertex buffer
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glVertexAttribDivisor(2, 1); // tell OpenGL this is an instanced vertex attribute.
+
     gltf loading
 
     Mesh Attributes:
@@ -5343,6 +6507,45 @@ void gs_engine_quit()
                 Get data and push into mesh definition
 
     Is there a way to have the user be able to specify a layout and then use that for the mesh?
+
+    gs_enum_decl(gs_asset_mesh_attribute_type,
+        GS_ASSET_MESH_ATTRIBUTE_TYPE_POSITION,
+        GS_ASSET_MESH_ATTRIBUTE_TYPE_NORMAL,
+        GS_ASSET_MESH_ATTRIBUTE_TYPE_TANGENT,
+        GS_ASSET_MESH_ATTRIBUTE_TYPE_JOINT,
+        GS_ASSET_MESH_ATTRIBUTE_TYPE_WEIGHT,
+        GS_ASSET_MESH_ATTRIBUTE_TYPE_TEXCOORD,
+        GS_ASSET_MESH_ATTRIBUTE_TYPE_COLOR
+    });
+
+    typedef struct gs_asset_mesh_layout_t {
+        gs_asset_mesh_attribute_type type;     // Type of attribute
+        uint32_t idx;                          // Optional index (for joint/weight/texcoord/color)
+    } gs_asset_mesh_layout_t;
+
+    typedef struct gs_asset_mesh_decl_t
+    {
+        gs_asset_mesh_layout_t* layout;        // Mesh attribute layout array
+        size_t layout_size;                    // Size of mesh attribute layout array in bytes
+    } gs_asset_mesh_decl_t;
+
+    // Mesh holds...what?
+    // A pipeline? Shouldn't have to.
+    // Material? Nope.
+    // It's just mesh data. (so an index/vertex buffer)
+
+    typedef struct gs_asset_mesh_t
+    {
+        gs_handle(gs_graphics_buffer_t) vbo;
+        gs_handle(gs_graphics_buffer_t) ibo;
+    } gs_asset_mesh_t;
+
+    void gs_asset_mesh_load_from_file(const char* path, void* out, gs_asset_mesh_decl_t* decl, void* data_out, size_t data_size)
+    {
+        gs_asset_mesh_t* mesh = (gs_asset_mesh_t*)out;
+
+        // Parse gltf data
+    }
 
     Does this need to line up with a pipeline? Not necessarily, right?
 
@@ -5375,4 +6578,21 @@ void gs_engine_quit()
                 For each attribute:
                     Get data and push into mesh definition 
     }
+
+
+    main update for web? android? probably want to move to different "main" implementations:
+        gs_win32_main
+        gs_glfw_linux_main
+        gs_glfw_osx_main
+        gs_glfw_win32_main
+        gs_glfw_emsc_main
+
+        Each platform should define its own main function, control its own loop, reach into application code, then
+        run how it needs to.
+
+        int main(int32_t argc, char** argv) 
+        {
+            emscripten_set_main_loop(gs_engine_create(gs_main(argc, argv))->run(), 0, true);
+        }
+
 */

@@ -34,6 +34,11 @@
     	#define GS_IMMEDIATE_DRAW_IMPL
     	#include "gs_idraw.h"
 
+    TODO (john): 
+		* Convert flush command to push back commands
+		* On final flush, request update for vertex/index buffer data
+		* Then iterate commands to submit pipelines + state to gfx backend
+
 	================================================================================================================
 */
 
@@ -93,9 +98,9 @@ typedef struct gs_immediate_cache_t
 typedef struct gs_immediate_draw_t
 {
 	/* Handle to vertex buffer resource */
-	gs_handle(gs_graphics_buffer_t) vbo;
+	gs_handle(gs_graphics_vertex_buffer_t) vbo;
 	/* Handle to index buffer resource */
-	gs_handle(gs_graphics_buffer_t) ibo;
+	gs_handle(gs_graphics_index_buffer_t) ibo;
 	/* Default texture */
 	gs_handle(gs_graphics_texture_t) tex_default;
 	/* Default font */
@@ -103,9 +108,9 @@ typedef struct gs_immediate_draw_t
 	/* Pipeline state matrix table */
 	gs_hash_table(gsi_pipeline_state_attr_t, gs_handle(gs_graphics_pipeline_t)) pipeline_table;
 	/* Uniform buffer */
-	gs_handle(gs_graphics_buffer_t) uniforms;
-	/* Sampler buffer */
-	gs_handle(gs_graphics_buffer_t) samplers;
+	gs_handle(gs_graphics_uniform_t) uniform;
+	/* Uniform sampler */
+	gs_handle(gs_graphics_uniform_t) sampler;
 	/* Dynamic array of vertex data to update */
 	gs_dyn_array(gs_immediate_vert_t) vertices;
 	/* Dynamic array of index data to update */
@@ -126,6 +131,9 @@ typedef struct gs_immediate_draw_t
 // Create / Init / Shutdown / Free
 GS_API_DECL gs_immediate_draw_t gs_immediate_draw_new();
 GS_API_DECL void                gs_immediate_draw_free(gs_immediate_draw_t* gsi);
+
+// Get pipeline from state
+GS_API_DECL gs_handle(gs_graphics_pipeline_t) gsi_get_pipeline(gs_immediate_draw_t* gsi, gsi_pipeline_state_attr_t state);
 
 // Core Vertex Functions
 GS_API_DECL void gsi_begin(gs_immediate_draw_t* gsi, gs_graphics_primitive_type type);
@@ -181,6 +189,7 @@ GS_API_DECL void gsi_line3Dv(gs_immediate_draw_t* gsi, gs_vec3 s, gs_vec3 e, gs_
 
 // Shape Drawing Util
 GS_API_DECL void gsi_rect(gs_immediate_draw_t* gsi, float x0, float y0, float x1, float y1, uint8_t r, uint8_t g, uint8_t b, uint8_t a, gs_graphics_primitive_type type);
+GS_API_DECL void gsi_rectv(gs_immediate_draw_t* gsi, gs_vec2 bl, gs_vec2 tr, gs_color_t color, gs_graphics_primitive_type type);
 GS_API_DECL void gsi_rectx(gs_immediate_draw_t* gsi, float l, float b, float r, float t, float u0, float v0, float u1, float v1, uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _a, gs_graphics_primitive_type type);
 GS_API_DECL void gsi_rectvx(gs_immediate_draw_t* gsi, gs_vec2 bl, gs_vec2 tr, gs_vec2 uv0, gs_vec2 uv1, gs_color_t color, gs_graphics_primitive_type type);
 GS_API_DECL void gsi_rectvd(gs_immediate_draw_t* gsi, gs_vec2 xy, gs_vec2 wh, gs_vec2 uv0, gs_vec2 uv1, gs_color_t color, gs_graphics_primitive_type type);
@@ -194,8 +203,11 @@ GS_API_DECL void gsi_bezier(gs_immediate_draw_t* gsi, float x0, float y0, float 
 GS_API_DECL void gsi_text(gs_immediate_draw_t* gsi, float x, float y, const char* text, const gs_asset_font_t* fp, bool32_t flip_vertical, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
 // Private Internal Utilities (Not user facing)
-GS_API_DECL const char* GetDefaultCompressedFontDataTTFBase85();
-GS_API_DECL void Decode85(const unsigned char* src, unsigned char* dst);
+GS_API_DECL const char* GSGetDefaultCompressedFontDataTTFBase85();
+GS_API_DECL void GSDecode85(const unsigned char* src, unsigned char* dst);
+GS_API_DECL unsigned int GSDecode85Byte(char c);
+GS_API_DECL unsigned int gs_decompress_length(const unsigned char* input);
+GS_API_DECL unsigned int gs_decompress(unsigned char* output, unsigned char* input, unsigned int length);
 
 /*==== Implementation ====*/
 
@@ -207,8 +219,17 @@ GS_API_DECL void Decode85(const unsigned char* src, unsigned char* dst);
 
 const f32 gsi_deg2rad = (f32)GS_PI / 180.f;
 
-const char* gsi_v_fillsrc = "\n"
-"#version 330\n"
+// Shaders
+#if (defined GS_PLATFORM_WEB || defined GS_PLATFORM_ANDROID)
+    #define GSI_GL_VERSION_STR "#version 300 es\n"
+#else
+    #define GSI_GL_VERSION_STR "#version 330 core\n"
+#endif
+
+
+const char* gsi_v_fillsrc =
+GSI_GL_VERSION_STR
+"precision mediump float;\n"
 "layout(location = 0) in vec3 a_position;\n"
 "layout(location = 1) in vec2 a_uv;\n"
 "layout(location = 2) in vec4 a_color;\n"
@@ -221,8 +242,9 @@ const char* gsi_v_fillsrc = "\n"
 "  color = a_color;\n"
 "}\n";
 
-const char* gsi_f_fillsrc = "\n"
- "#version 330\n"
+const char* gsi_f_fillsrc =
+GSI_GL_VERSION_STR
+"precision mediump float;\n"
 "in vec2 uv;\n"
 "in vec4 color;\n"
 "uniform sampler2D u_tex;\n"
@@ -275,38 +297,29 @@ gs_immediate_draw_t gs_immediate_draw_new()
 	// Init command buffer
 	gsi.commands = gs_command_buffer_new();	// Not totally sure on the syntax for new vs. create
 
-	// Create uniform buffer 
+	// Create uniform buffer
+	gs_graphics_uniform_layout_desc_t uldesc = gs_default_val();
+	uldesc.type = GS_GRAPHICS_UNIFORM_MAT4;
 	gs_graphics_uniform_desc_t udesc = gs_default_val();
-	udesc.type = GS_GRAPHICS_UNIFORM_MAT4;
-
-	gs_graphics_buffer_desc_t ubdesc = gs_default_val();
-	ubdesc.type = GS_GRAPHICS_BUFFER_UNIFORM;
-	ubdesc.data = &udesc; 
-	ubdesc.size = sizeof(udesc);
-	ubdesc.name = "u_mvp";
-
-	gsi.uniforms = gs_graphics_buffer_create(&ubdesc);
+	udesc.name = "u_mvp";
+	udesc.layout = &uldesc;
+	gsi.uniform = gs_graphics_uniform_create(&udesc);
 
 	// Create sampler buffer 
-	gs_graphics_sampler_desc_t smpldesc = gs_default_val();
-	smpldesc.type = GS_GRAPHICS_SAMPLER_2D;
-
-	gs_graphics_buffer_desc_t sbdesc = gs_default_val();
-	sbdesc.type = GS_GRAPHICS_BUFFER_SAMPLER;
-	sbdesc.data = &smpldesc;
-	sbdesc.size = sizeof(smpldesc);
+	gs_graphics_uniform_layout_desc_t sldesc = gs_default_val(); 
+	sldesc.type = GS_GRAPHICS_UNIFORM_SAMPLER2D;
+	gs_graphics_uniform_desc_t sbdesc = gs_default_val();
 	sbdesc.name = "u_tex";
-
-	gsi.samplers = gs_graphics_buffer_create(&sbdesc); 
+	sbdesc.layout = &sldesc;
+	gsi.sampler = gs_graphics_uniform_create(&sbdesc); 
 
 	// Create vertex buffer 
-	gs_graphics_buffer_desc_t vbdesc = gs_default_val();
-	vbdesc.type = GS_GRAPHICS_BUFFER_VERTEX;
-	vbdesc.data = NULL;
-	vbdesc.size = 0;
-	vbdesc.usage = GS_GRAPHICS_BUFFER_USAGE_STREAM;
+	gs_graphics_vertex_buffer_desc_t vdesc = gs_default_val();
+	vdesc.data = NULL;
+	vdesc.size = 0;
+	vdesc.usage = GS_GRAPHICS_BUFFER_USAGE_STREAM;
 
-	gsi.vbo = gs_graphics_buffer_create(&vbdesc);
+	gsi.vbo = gs_graphics_vertex_buffer_create(&vdesc);
 
 	// Create default texture (4x4 white) 
 	gs_color_t pixels[16] = gs_default_val();
@@ -335,11 +348,10 @@ gs_immediate_draw_t gs_immediate_draw_new()
 	sdesc.name = "gs_immediate_default_fill_shader";
 
 	// Vertex attr layout
-	gs_graphics_vertex_attribute_type gsi_layout[] = {
-		GS_GRAPHICS_VERTEX_ATTRIBUTE_FLOAT3,
-		GS_GRAPHICS_VERTEX_ATTRIBUTE_FLOAT2,
-		GS_GRAPHICS_VERTEX_ATTRIBUTE_BYTE4
-	};	
+    gs_graphics_vertex_attribute_desc_t gsi_vattrs[3] = gs_default_val();
+    gsi_vattrs[0].format = GS_GRAPHICS_VERTEX_ATTRIBUTE_FLOAT3; gsi_vattrs[0].name = "a_position";
+    gsi_vattrs[1].format = GS_GRAPHICS_VERTEX_ATTRIBUTE_FLOAT2; gsi_vattrs[1].name = "a_uv";
+    gsi_vattrs[2].format = GS_GRAPHICS_VERTEX_ATTRIBUTE_BYTE4; gsi_vattrs[2].name = "a_color";
 
 	// Iterate through attribute list, then create custom pipelines requested.
 	gs_handle(gs_graphics_shader_t) shader = gs_graphics_shader_create(&sdesc);
@@ -369,8 +381,8 @@ gs_immediate_draw_t gs_immediate_draw_new()
 		pdesc.blend.src = GS_GRAPHICS_BLEND_MODE_SRC_ALPHA;
 		pdesc.blend.dst = GS_GRAPHICS_BLEND_MODE_ONE_MINUS_SRC_ALPHA;
 		pdesc.depth.func = d ? GS_GRAPHICS_DEPTH_FUNC_LESS : (gs_graphics_depth_func_type)0x00;
-		pdesc.layout = gsi_layout;
-		pdesc.size = sizeof(gsi_layout);
+		pdesc.layout.attrs = gsi_vattrs;
+		pdesc.layout.size = sizeof(gsi_vattrs);
 
 		gs_handle(gs_graphics_pipeline_t) hndl = gs_graphics_pipeline_create(&pdesc);
 		gs_hash_table_insert(gsi.pipeline_table, attr, hndl);
@@ -379,13 +391,13 @@ gs_immediate_draw_t gs_immediate_draw_new()
 	// Create default font
 	gs_asset_font_t* f = &gsi.font_default;
 	stbtt_fontinfo font = gs_default_val();
-	const char* compressed_ttf_data_base85 = GetDefaultCompressedFontDataTTFBase85();
+	const char* compressed_ttf_data_base85 = GSGetDefaultCompressedFontDataTTFBase85();
 	s32 compressed_ttf_size = (((s32)strlen(compressed_ttf_data_base85) + 4) / 5) * 4;
     void* compressed_ttf_data = gs_malloc((usize)compressed_ttf_size);
-    Decode85((const unsigned char*)compressed_ttf_data_base85, (unsigned char*)compressed_ttf_data);
-    const u32 buf_decompressed_size = stb_decompress_length((unsigned char*)compressed_ttf_data);
+    GSDecode85((const unsigned char*)compressed_ttf_data_base85, (unsigned char*)compressed_ttf_data);
+    const u32 buf_decompressed_size = gs_decompress_length((unsigned char*)compressed_ttf_data);
     unsigned char* buf_decompressed_data = (unsigned char*)gs_malloc(buf_decompressed_size);
-    stb_decompress(buf_decompressed_data, (unsigned char*)compressed_ttf_data, (u32)compressed_ttf_size);
+    gs_decompress(buf_decompressed_data, (unsigned char*)compressed_ttf_data, (u32)compressed_ttf_size);
 
 	const u32 w = 512;
 	const u32 h = 512;
@@ -439,6 +451,13 @@ gs_immediate_draw_t gs_immediate_draw_new()
 void gs_immediate_draw_free(gs_immediate_draw_t* gsi)
 {
 	// Free all data
+}
+
+gs_handle(gs_graphics_pipeline_t) gsi_get_pipeline(gs_immediate_draw_t* gsi, gsi_pipeline_state_attr_t state)
+{
+	// Bind pipeline
+	gs_assert(gs_hash_table_key_exists(gsi->pipeline_table, state));
+	return gs_hash_table_get(gsi->pipeline_table, state);
 }
 
 void gs_immediate_draw_set_pipeline(gs_immediate_draw_t* gsi)
@@ -500,27 +519,34 @@ void gsi_flush(gs_immediate_draw_t* gsi)
 	gs_mat4 mvp = gs_mat4_mul(proj, mv);
 
 	// Update vertex buffer (command buffer version)
-	gs_graphics_buffer_desc_t vbdesc = gs_default_val();
-	vbdesc.type = GS_GRAPHICS_BUFFER_VERTEX;
-	vbdesc.data = gsi->vertices;
-	vbdesc.size = gs_dyn_array_size(gsi->vertices) * sizeof(gs_immediate_vert_t);
-	vbdesc.usage = GS_GRAPHICS_BUFFER_USAGE_STREAM;
+	gs_graphics_vertex_buffer_desc_t vdesc = gs_default_val();
+	vdesc.data = gsi->vertices;
+	vdesc.size = gs_dyn_array_size(gsi->vertices) * sizeof(gs_immediate_vert_t);
+	vdesc.usage = GS_GRAPHICS_BUFFER_USAGE_STREAM;
 
-	gs_graphics_buffer_request_update(&gsi->commands, gsi->vbo, &vbdesc);
+	gs_graphics_vertex_buffer_request_update(&gsi->commands, gsi->vbo, &vdesc);
 
-	// Set up binds
-	gs_graphics_bind_desc_t vbo; {vbo.type = GS_GRAPHICS_BIND_VERTEX_BUFFER; vbo.buffer = gsi->vbo;}
-	gs_graphics_bind_desc_t ub; {ub.type = GS_GRAPHICS_BIND_UNIFORM_BUFFER; ub.buffer = gsi->uniforms; ub.data = &mvp;}
-	gs_graphics_bind_desc_t sb; {sb.type = GS_GRAPHICS_BIND_SAMPLER_BUFFER; sb.buffer = gsi->samplers; sb.data = &gsi->cache.texture; sb.binding = 0;}
+	// Set up all binding data
+	gs_graphics_bind_vertex_buffer_desc_t vbuffer = gs_default_val();
+	vbuffer.buffer = gsi->vbo;
 
-	gs_graphics_bind_desc_t binds[] = {
-		vbo, ub, sb
-	};
+	gs_graphics_bind_uniform_desc_t ubinds[2] = gs_default_val();
+	ubinds[0].uniform = gsi->uniform; ubinds[0].data = &mvp;
+	ubinds[1].uniform = gsi->sampler; ubinds[1].data = &gsi->cache.texture; ubinds[1].binding = 0;
 
-	gs_graphics_bind_bindings(&gsi->commands, binds, sizeof(binds));
+    // Bindings for all buffers: vertex, uniform, sampler
+    gs_graphics_bind_desc_t binds = gs_default_val();
+   	binds.vertex_buffers.desc = &vbuffer; 
+   	binds.uniforms.desc = ubinds;
+   	binds.uniforms.size = sizeof(ubinds);
+
+   	// Bind bindings
+	gs_graphics_apply_bindings(&gsi->commands, &binds);
 
 	// Submit draw
-	gs_graphics_draw(&gsi->commands, 0, gs_dyn_array_size(gsi->vertices));
+	gs_graphics_draw_desc_t draw = gs_default_val();
+	draw.start = 0; draw.count = gs_dyn_array_size(gsi->vertices);
+	gs_graphics_draw(&gsi->commands, &draw);
 
 	// Clear data
 	gs_dyn_array_clear(gsi->vertices);
@@ -548,7 +574,7 @@ void gsi_blend_enabled(gs_immediate_draw_t* gsi, bool enabled)
 void gsi_depth_enabled(gs_immediate_draw_t* gsi, bool enabled)
 {
 	// Push a new pipeline?
-	if (gsi->cache.pipeline.depth_enabled == enabled) {
+	if (gsi->cache.pipeline.depth_enabled == (uint16_t)enabled) {
 		return;
 	}
 
@@ -565,7 +591,7 @@ void gsi_depth_enabled(gs_immediate_draw_t* gsi, bool enabled)
 void gsi_stencil_enabled(gs_immediate_draw_t* gsi, bool enabled)
 {
 	// Push a new pipeline?
-	if (gsi->cache.pipeline.stencil_enabled == enabled) {
+	if (gsi->cache.pipeline.stencil_enabled == (uint16_t)enabled) {
 		return;
 	}
 
@@ -573,7 +599,7 @@ void gsi_stencil_enabled(gs_immediate_draw_t* gsi, bool enabled)
 	gsi_flush(gsi);
 
 	// Set primitive type
-	gsi->cache.pipeline.stencil_enabled = enabled;	
+	gsi->cache.pipeline.stencil_enabled = (uint16_t)enabled;	
 
 	// Bind pipeline
 	gs_immediate_draw_set_pipeline(gsi);
@@ -582,7 +608,7 @@ void gsi_stencil_enabled(gs_immediate_draw_t* gsi, bool enabled)
 void gsi_face_cull_enabled(gs_immediate_draw_t* gsi, bool enabled)
 {
 	// Push a new pipeline?
-	if (gsi->cache.pipeline.face_cull_enabled == enabled) {
+	if (gsi->cache.pipeline.face_cull_enabled == (uint16_t)enabled) {
 		return;
 	}
 
@@ -590,7 +616,7 @@ void gsi_face_cull_enabled(gs_immediate_draw_t* gsi, bool enabled)
 	gsi_flush(gsi);
 
 	// Set primitive type
-	gsi->cache.pipeline.face_cull_enabled = enabled;	
+	gsi->cache.pipeline.face_cull_enabled = (uint16_t)enabled;	
 
 	// Bind pipeline
 	gs_immediate_draw_set_pipeline(gsi);
@@ -939,6 +965,11 @@ void gsi_rect(gs_immediate_draw_t* gsi, float l, float b, float r, float t, uint
 	gsi_rectx(gsi, l, b, r, t, 0.f, 0.f, 1.f, 1.f, _r, _g, _b, _a, type);
 }
 
+void gsi_rectv(gs_immediate_draw_t* gsi, gs_vec2 bl, gs_vec2 tr, gs_color_t color, gs_graphics_primitive_type type)
+{
+	gsi_rectx(gsi, bl.x, bl.y, tr.x, tr.y, 0.f, 0.f, 1.f, 1.f, color.r, color.g, color.b, color.a, type);
+}
+
 void gsi_rectvx(gs_immediate_draw_t* gsi, gs_vec2 bl, gs_vec2 tr, gs_vec2 uv0, gs_vec2 uv1, gs_color_t color, gs_graphics_primitive_type type)
 {
 	gsi_rectx(gsi, bl.x, bl.y, tr.x, tr.y, uv0.x, uv0.y, uv1.x, uv1.y, color.r, color.g, color.b, color.a, type);
@@ -997,14 +1028,14 @@ void gsi_box(gs_immediate_draw_t* gsi, float x, float y, float z, float hx, floa
 	float height = hy;
 	float length = hz;
 
-	gs_vec3 v0 = gs_v3(x - width/2, y - height/2, z + length/2);
-	gs_vec3 v1 = gs_v3(x + width/2, y - height/2, z + length/2);
-	gs_vec3 v2 = gs_v3(x - width/2, y + height/2, z + length/2);
-	gs_vec3 v3 = gs_v3(x + width/2, y + height/2, z + length/2);
-	gs_vec3 v4 = gs_v3(x - width/2, y - height/2, z - length/2);
-	gs_vec3 v5 = gs_v3(x - width/2, y + height/2, z - length/2);
-	gs_vec3 v6 = gs_v3(x + width/2, y - height/2, z - length/2);
-	gs_vec3 v7 = gs_v3(x + width/2, y + height/2, z - length/2);
+	gs_vec3 v0 = gs_v3(x - width, y - height, z + length);
+	gs_vec3 v1 = gs_v3(x + width, y - height, z + length);
+	gs_vec3 v2 = gs_v3(x - width, y + height, z + length);
+	gs_vec3 v3 = gs_v3(x + width, y + height, z + length);
+	gs_vec3 v4 = gs_v3(x - width, y - height, z - length);
+	gs_vec3 v5 = gs_v3(x - width, y + height, z - length);
+	gs_vec3 v6 = gs_v3(x + width, y - height, z - length);
+	gs_vec3 v7 = gs_v3(x + width, y + height, z - length);
 
 	gs_color_t color = gs_color(r, g, b, a);
 
@@ -1089,7 +1120,6 @@ void gsi_box(gs_immediate_draw_t* gsi, float x, float y, float z, float hx, floa
 
 		} break;
 	}
-
 }
 
 void gsi_sphere(gs_immediate_draw_t* gsi, float cx, float cy, float cz, float radius, uint8_t r, uint8_t g, uint8_t b, uint8_t a, gs_graphics_primitive_type type)
@@ -1097,8 +1127,8 @@ void gsi_sphere(gs_immediate_draw_t* gsi, float cx, float cy, float cz, float ra
 	// Modified from: http://www.songho.ca/opengl/gl_sphere.html
 	const uint32_t stacks = 16;
 	const uint32_t sectors = 32; 
-	float sector_step = 2.f * GS_PI / (float)sectors;
-	float stack_step = GS_PI / (float)stacks;
+	float sector_step = 2.f * (float)GS_PI / (float)sectors;
+	float stack_step = (float)GS_PI / (float)stacks;
 	struct { 
 		gs_vec3 p;
 		gs_vec2 uv;
@@ -1256,13 +1286,18 @@ void gsi_draw(gs_immediate_draw_t* gsi, gs_command_buffer_t* cb)
 
 void gsi_render_pass_submit(gs_immediate_draw_t* gsi, gs_command_buffer_t* cb, gs_color_t c)
 {
-	gs_graphics_render_pass_action_t action = gs_default_val();
+	gs_graphics_clear_action_t action = gs_default_val();
 	action.color[0] = (float)c.r / 255.f; 
 	action.color[1] = (float)c.g / 255.f; 
 	action.color[2] = (float)c.b / 255.f; 
 	action.color[3] = (float)c.a / 255.f;
+	gs_graphics_clear_desc_t clear = gs_default_val();
+	clear.actions = &action;
 	gs_renderpass pass = gs_default_val();
-	gs_graphics_begin_render_pass(cb, pass, &action, sizeof(action));
+	gs_vec2 fb = gs_platform_framebuffer_sizev(gs_platform_main_window());
+	gs_graphics_begin_render_pass(cb, pass);
+	gs_graphics_set_viewport(cb, 0, 0, (int32_t)fb.x, (int32_t)fb.y);
+	gs_graphics_clear(cb, &clear);
 	gsi_draw(gsi, cb);
 	gs_graphics_end_render_pass(cb);
 }
@@ -1280,19 +1315,135 @@ void gsi_render_pass_submit(gs_immediate_draw_t* gsi, gs_command_buffer_t* cb, g
 // The purpose of encoding as base85 instead of "0x00,0x01,..." style is only save on _source code_ size.
 //-----------------------------------------------------------------------------
 
-unsigned int Decode85Byte(char c)                                    {return c >= '\\' ? c-36 : c-35;}
-void         Decode85(const unsigned char* src, unsigned char* dst)
+// Modified from stb lib for embedding without collisions
+GS_API_DECL unsigned int gs_decompress_length(const unsigned char* input)
+{
+    return (input[8] << 24) + (input[9] << 16) + (input[10] << 8) + input[11];
+}
+
+static unsigned char *gs__barrier;
+static unsigned char *gs__barrier2;
+static unsigned char *gs__barrier3;
+static unsigned char *gs__barrier4;
+
+static unsigned char *gs__dout;
+static void gs__match(const unsigned char *data, unsigned int length)
+{
+   // INVERSE of memmove... write each byte before copying the next...
+   assert (gs__dout + length <= gs__barrier);
+   if (gs__dout + length > gs__barrier) { gs__dout += length; return; }
+   if (data < gs__barrier4) { gs__dout = gs__barrier+1; return; }
+   while (length--) *gs__dout++ = *data++;
+}
+
+static void gs__lit(const unsigned char *data, unsigned int length)
+{
+   assert (gs__dout + length <= gs__barrier);
+   if (gs__dout + length > gs__barrier) { gs__dout += length; return; }
+   if (data < gs__barrier2) { gs__dout = gs__barrier+1; return; }
+   memcpy(gs__dout, data, length);
+   gs__dout += length;
+}
+
+#define gs__in2(x)   ((i[x] << 8) + i[(x)+1])
+#define gs__in3(x)   ((i[x] << 16) + gs__in2((x)+1))
+#define gs__in4(x)   ((i[x] << 24) + gs__in3((x)+1))
+
+static unsigned char *gs_decompress_token(unsigned char *i)
+{
+    if (*i >= 0x20) { // use fewer if's for cases that expand small
+        if (*i >= 0x80)       gs__match(gs__dout-i[1]-1, i[0] - 0x80 + 1), i += 2;
+        else if (*i >= 0x40)  gs__match(gs__dout-(gs__in2(0) - 0x4000 + 1), i[2]+1), i += 3;
+        else /* *i >= 0x20 */ gs__lit(i+1, i[0] - 0x20 + 1), i += 1 + (i[0] - 0x20 + 1);
+    } else { // more ifs for cases that expand large, since overhead is amortized
+        if (*i >= 0x18)       gs__match(gs__dout-(gs__in3(0) - 0x180000 + 1), i[3]+1), i += 4;
+        else if (*i >= 0x10)  gs__match(gs__dout-(gs__in3(0) - 0x100000 + 1), gs__in2(3)+1), i += 5;
+        else if (*i >= 0x08)  gs__lit(i+2, gs__in2(0) - 0x0800 + 1), i += 2 + (gs__in2(0) - 0x0800 + 1);
+        else if (*i == 0x07)  gs__lit(i+3, gs__in2(1) + 1), i += 3 + (gs__in2(1) + 1);
+        else if (*i == 0x06)  gs__match(gs__dout-(gs__in3(1)+1), i[4]+1), i += 5;
+        else if (*i == 0x04)  gs__match(gs__dout-(gs__in3(1)+1), gs__in2(4)+1), i += 6;
+    }
+    return i;
+}
+
+unsigned int gs_adler32(unsigned int adler32, unsigned char *buffer, unsigned int buflen)
+{
+    const unsigned long ADLER_MOD = 65521;
+    unsigned long s1 = adler32 & 0xffff, s2 = adler32 >> 16;
+    unsigned long blocklen = buflen % 5552;
+
+    unsigned long i;
+    while (buflen) {
+        for (i=0; i + 7 < blocklen; i += 8) {
+            s1 += buffer[0], s2 += s1;
+            s1 += buffer[1], s2 += s1;
+            s1 += buffer[2], s2 += s1;
+            s1 += buffer[3], s2 += s1;
+            s1 += buffer[4], s2 += s1;
+            s1 += buffer[5], s2 += s1;
+            s1 += buffer[6], s2 += s1;
+            s1 += buffer[7], s2 += s1;
+
+            buffer += 8;
+        }
+
+        for (; i < blocklen; ++i)
+            s1 += *buffer++, s2 += s1;
+
+        s1 %= ADLER_MOD, s2 %= ADLER_MOD;
+        buflen -= blocklen;
+        blocklen = 5552;
+    }
+    return (unsigned int)(s2 << 16) + (unsigned int)s1;
+}
+
+GS_API_DECL unsigned int gs_decompress(unsigned char *output, unsigned char *i, unsigned int length)
+{
+   uint32_t olen;
+   if (gs__in4(0) != 0x57bC0000) return 0;
+   if (gs__in4(4) != 0)          return 0; // error! stream is > 4GB
+   olen = gs_decompress_length(i);
+   gs__barrier2 = i;
+   gs__barrier3 = i+length;
+   gs__barrier = output + olen;
+   gs__barrier4 = output;
+   i += 16;
+
+   gs__dout = output;
+   while (1) {
+      unsigned char *old_i = i;
+      i = gs_decompress_token(i);
+      if (i == old_i) {
+         if (*i == 0x05 && i[1] == 0xfa) {
+            assert(gs__dout == output + olen);
+            if (gs__dout != output + olen) return 0;
+            if (gs_adler32(1, output, olen) != (uint32_t) gs__in4(2))
+               return 0;
+            return olen;
+         } else {
+            assert(0); /* NOTREACHED */
+            return 0;
+         }
+      }
+      assert(gs__dout <= output + olen);
+      if (gs__dout > output + olen)
+         return 0;
+   }
+}
+
+GS_API_DECL unsigned int GSDecode85Byte(char c)                                    {return c >= '\\' ? c-36 : c-35;}
+GS_API_DECL void         GSDecode85(const unsigned char* src, unsigned char* dst)
 {
     while (*src)
     {
-        unsigned int tmp = Decode85Byte(src[0]) + 85 * (Decode85Byte(src[1]) + 85 * (Decode85Byte(src[2]) + 85 * (Decode85Byte(src[3]) + 85 * Decode85Byte(src[4]))));
+        unsigned int tmp = GSDecode85Byte(src[0]) + 85 * (GSDecode85Byte(src[1]) + 85 * (GSDecode85Byte(src[2]) + 85 * (GSDecode85Byte(src[3]) + 85 * GSDecode85Byte(src[4]))));
         dst[0] = ((tmp >> 0) & 0xFF); dst[1] = ((tmp >> 8) & 0xFF); dst[2] = ((tmp >> 16) & 0xFF); dst[3] = ((tmp >> 24) & 0xFF);   // We can't assume little-endianness.
         src += 5;
         dst += 4;
     }
 }
 
-static const char __proggy_clean_ttf_compressed_data_base85[11980 + 1] =
+static const char __gs_proggy_clean_ttf_compressed_data_base85[11980 + 1] =
     "7])#######hV0qs'/###[),##/l:$#Q6>##5[n42>c-TH`->>#/e>11NNV=Bv(*:.F?uu#(gRU.o0XGH`$vhLG1hxt9?W`#,5LsCp#-i>.r$<$6pD>Lb';9Crc6tgXmKVeU2cD4Eo3R/"
     "2*>]b(MC;$jPfY.;h^`IWM9<Lh2TlS+f-s$o6Q<BWH`YiU.xfLq$N;$0iR/GX:U(jcW2p/W*q?-qmnUCI;jHSAiFWM.R*kU@C=GH?a9wp8f$e.-4^Qg1)Q-GL(lf(r/7GrRgwV%MS=C#"
     "`8ND>Qo#t'X#(v#Y9w0#1D$CIf;W'#pWUPXOuxXuU(H9M(1<q-UE31#^-V'8IRUo7Qf./L>=Ke$$'5F%)]0^#0X@U.a<r:QLtFsLcL6##lOj)#.Y5<-R&KgLwqJfLgN&;Q?gI^#DY2uL"
@@ -1380,9 +1531,9 @@ static const char __proggy_clean_ttf_compressed_data_base85[11980 + 1] =
     "GT4CPGT4CPGT4CPGT4CPGT4CPGT4CP-qekC`.9kEg^+F$kwViFJTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5o,^<-28ZI'O?;xp"
     "O?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xp;7q-#lLYI:xvD=#";
 
-const char* GetDefaultCompressedFontDataTTFBase85()
+GS_API_DECL const char* GSGetDefaultCompressedFontDataTTFBase85()
 {
-    return __proggy_clean_ttf_compressed_data_base85;
+    return __gs_proggy_clean_ttf_compressed_data_base85;
 }
 
 #undef GS_IMMEDIATE_DRAW_IMPL

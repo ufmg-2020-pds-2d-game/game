@@ -25,10 +25,10 @@
 #include "../external/dr_libs/dr_mp3.h"
 
 /* Audio Create, Destroy, Init, Shutdown, Submit */
-gs_audio_i* gs_audio_create()
+gs_audio_t* gs_audio_create()
 {
     // Construct new audio interface
-    gs_audio_i* audio = gs_malloc_init(gs_audio_i);
+    gs_audio_t* audio = gs_malloc_init(gs_audio_t);
     /* Audio source data cache */
     audio->sources = gs_slot_array_new(gs_audio_source_t);
     /* Audio instance data cache */
@@ -43,7 +43,7 @@ gs_audio_i* gs_audio_create()
     return audio;
 }
 
-void gs_audio_destroy(gs_audio_i* audio)
+void gs_audio_destroy(gs_audio_t* audio)
 {
     // Release all relevant memory
     if (audio)
@@ -65,8 +65,10 @@ bool32_t gs_audio_load_ogg_data_from_file
     void** samples
 )
 {
-    *sample_count = stb_vorbis_decode_filename(file_path, channels, 
-        sample_rate, (s16**)samples);
+    size_t len = 0;
+    char* file_data = gs_platform_read_file_contents(file_path, "rb", &len);
+    *sample_count = stb_vorbis_decode_memory((const unsigned char*)file_data, (size_t)len, channels, sample_rate, (s16**)samples);
+    gs_free(file_data);
 
     if (!*samples || *sample_count == -1)
     {
@@ -89,10 +91,12 @@ bool32_t gs_audio_load_wav_data_from_file
     void** samples
 )
 {
+    size_t len = 0;
+    char* file_data = gs_platform_read_file_contents(file_path, "rb", &len);
     uint64_t total_pcm_frame_count = 0;
-    *samples = drwav_open_file_and_read_pcm_frames_s16(
-        file_path, (uint32_t*)channels, (uint32_t*)sample_rate, 
-        &total_pcm_frame_count, NULL);
+    *samples =  drwav_open_memory_and_read_pcm_frames_s16(
+            file_data, len, (uint32_t*)channels, (uint32_t*)sample_rate, &total_pcm_frame_count, NULL);
+    gs_free(file_data);
 
     if (!*samples) {
         *samples = NULL; 
@@ -114,11 +118,13 @@ bool32_t gs_audio_load_mp3_data_from_file
     void** samples
 )
 {
-    // Decode entire mp3 
+    size_t len = 0;
+    char* file_data = gs_platform_read_file_contents(file_path, "rb", &len);
     uint64_t total_pcm_frame_count = 0;
     drmp3_config cfg = gs_default_val();
-    *samples = drmp3_open_file_and_read_pcm_frames_s16(
-        file_path, &cfg, &total_pcm_frame_count, NULL);
+    *samples =  drmp3_open_memory_and_read_pcm_frames_s16(
+            file_data, len, &cfg, &total_pcm_frame_count, NULL);
+    gs_free(file_data);
 
     if (!*samples) {
         *samples = NULL; 
@@ -136,13 +142,12 @@ bool32_t gs_audio_load_mp3_data_from_file
 /* Audio create source */
 gs_handle(gs_audio_source_t) gs_audio_load_from_file(const char* file_path)
 {
-    gs_audio_i* audio = gs_engine_subsystem(audio);
+    gs_audio_t* audio = gs_engine_subsystem(audio);
     gs_audio_source_t src = gs_default_val();
     gs_handle(gs_audio_source_t) handle = gs_handle_invalid(gs_audio_source_t);
     bool32_t load_successful = false;
 
-    if(!gs_platform_file_exists(file_path)) 
-    {
+    if(!gs_platform_file_exists(file_path)) {
         gs_println("WARNING: Could not open file: %s", file_path);
         return handle;
     }
@@ -150,11 +155,11 @@ gs_handle(gs_audio_source_t) gs_audio_load_from_file(const char* file_path)
     char ext[64] = gs_default_val();
     gs_util_str_to_lower(file_path, ext, sizeof(ext));
     gs_platform_file_extension(ext, sizeof(ext), ext);
+    gs_println("Audio: File Extension: %s", ext);
 
     // Load OGG data
     if (gs_string_compare_equal(ext, "ogg"))
     {
-
         load_successful = gs_audio_load_ogg_data_from_file (
             file_path, 
             &src.sample_count, 
@@ -167,6 +172,7 @@ gs_handle(gs_audio_source_t) gs_audio_load_from_file(const char* file_path)
     // Load WAV data
     if (gs_string_compare_equal(ext, "wav"))
     {
+        gs_println("Audio: Loading Wav");
         load_successful = gs_audio_load_wav_data_from_file (
             file_path, 
             &src.sample_count, 
@@ -206,16 +212,20 @@ gs_handle(gs_audio_source_t) gs_audio_load_from_file(const char* file_path)
 /* Audio create instance */
 gs_handle(gs_audio_instance_t) gs_audio_instance_create(gs_audio_instance_decl_t* decl)
 {
-    gs_audio_i* audio = gs_engine_subsystem(audio);
-    return gs_handle_create(gs_audio_instance_t, gs_slot_array_insert(audio->instances, *decl));    
+    gs_audio_t* audio = gs_engine_subsystem(audio);
+    gs_audio_mutex_lock(audio);
+    gs_handle(gs_audio_instance_t) hndl = gs_handle_create(gs_audio_instance_t, gs_slot_array_insert(audio->instances, *decl));
+    gs_audio_mutex_unlock(audio);
+    return hndl;
 }
 
 /* Audio play instance data */
 void gs_audio_play_source(gs_handle(gs_audio_source_t) src, float volume)
 {
     // Construct instance data from source and play
-    gs_audio_i* audio = gs_engine_subsystem(audio);
+    gs_audio_t* audio = gs_engine_subsystem(audio);
     gs_audio_instance_decl_t decl = gs_default_val();
+    decl.src = src;
     decl.volume = gs_clamp(volume, audio->min_audio_volume, audio->max_audio_volume);
     decl.persistent = false;
     gs_handle(gs_audio_instance_t) inst = gs_audio_instance_create(&decl);
@@ -231,40 +241,59 @@ void gs_audio_play_source(gs_handle(gs_audio_source_t) src, float volume)
 
 void gs_audio_play(gs_handle(gs_audio_instance_t) inst)
 {
+    gs_audio_t* audio = gs_engine_subsystem(audio);
+    gs_audio_mutex_lock(audio);
     if (__gs_audio_inst_valid(inst)) {
-        gs_slot_array_getp(gs_engine_subsystem(audio)->instances, inst.id)->playing = true;
+        gs_slot_array_getp(audio->instances, inst.id)->playing = true;
     }
+    gs_audio_mutex_unlock(audio);
 }
 
 void gs_audio_pause(gs_handle(gs_audio_instance_t) inst)
 {
-    if (__gs_audio_inst_valid(inst)) {
-        gs_slot_array_getp(gs_engine_subsystem(audio)->instances, inst.id)->playing = false;
+    gs_audio_t* audio = gs_engine_subsystem(audio);
+    gs_audio_mutex_lock(audio);
+    if (__gs_audio_inst_valid(inst)) 
+    {
+        gs_slot_array_getp(audio->instances, inst.id)->playing = false;
     }
+    gs_audio_mutex_unlock(audio);
 }
 
 void gs_audio_stop(gs_handle(gs_audio_instance_t) inst)
 {
+    gs_audio_t* audio = gs_engine_subsystem(audio);
+    gs_audio_mutex_lock(audio);
     if (__gs_audio_inst_valid(inst)) {
-        gs_audio_instance_t* ip = gs_slot_array_getp(gs_engine_subsystem(audio)->instances, inst.id);
+        gs_audio_instance_t* ip = gs_slot_array_getp(audio->instances, inst.id);
         ip->playing = false;
         ip->sample_position = 0;
     }
+    gs_audio_mutex_unlock(audio);
 }
 
 void gs_audio_restart(gs_handle(gs_audio_instance_t) inst)
 {
-    if (__gs_audio_inst_valid(inst)) {
-        gs_slot_array_getp(gs_engine_subsystem(audio)->instances, inst.id)->sample_position = 0;
+    gs_audio_t* audio = gs_engine_subsystem(audio);
+    gs_audio_mutex_lock(audio);
+    if (__gs_audio_inst_valid(inst)) 
+    {
+        gs_slot_array_getp(audio->instances, inst.id)->sample_position = 0;
     }
+    gs_audio_mutex_unlock(audio);
 }
 
 bool32_t gs_audio_is_playing(gs_handle(gs_audio_instance_t) inst)
 {
-    if (__gs_audio_inst_valid(inst)) {
-        return (gs_slot_array_getp(gs_engine_subsystem(audio)->instances, inst.id)->playing);
+    bool32_t playing = false;
+    gs_audio_t* audio = gs_engine_subsystem(audio);
+    gs_audio_mutex_lock(audio);
+    if (__gs_audio_inst_valid(inst)) 
+    {
+        playing = gs_slot_array_getp(audio->instances, inst.id)->playing;
     }
-    return false;
+    gs_audio_mutex_unlock(audio);
+    return playing;
 }
 
 /* Audio instance data */
@@ -311,7 +340,7 @@ gs_audio_source_t* gs_audio_get_source_data(gs_handle(gs_audio_source_t) src)
 void gs_audio_get_runtime(gs_handle(gs_audio_source_t) src, int32_t* minutes_out, int32_t* seconds_out)
 {
     if (__gs_audio_src_valid(src)) {
-        gs_audio_i* audio = gs_engine_subsystem(audio);
+        gs_audio_t* audio = gs_engine_subsystem(audio);
         gs_audio_source_t* sp = gs_slot_array_getp(audio->sources, src.id);
         if (sp)
         {
@@ -393,15 +422,27 @@ typedef struct miniaudio_data_t
     ma_mutex lock;
 } miniaudio_data_t;
 
+void gs_audio_mutex_lock(gs_audio_t* audio)
+{
+    miniaudio_data_t* ma = (miniaudio_data_t*)audio->user_data;
+    ma_mutex_lock(&ma->lock);
+}
+
+void gs_audio_mutex_unlock(gs_audio_t* audio)
+{
+    miniaudio_data_t* ma = (miniaudio_data_t*)audio->user_data;
+    ma_mutex_unlock(&ma->lock);
+}
+
 void ma_audio_commit(ma_device* device, void* output, const void* input, ma_uint32 frame_count)
 {
-    gs_audio_i* audio = gs_engine_subsystem(audio);
+    gs_audio_t* audio = gs_engine_subsystem(audio);
     miniaudio_data_t* ma = (miniaudio_data_t*)audio->user_data;
     memset(output, 0, frame_count * device->playback.channels * ma_get_bytes_per_sample(device->playback.format));
 
     // Only destroy 32 at a time
     u32 destroy_count = 0;
-    gs_handle(gs_audio_instance_t) handles_to_destroy[32];
+    uint32_t handles_to_destroy[32];
 
     if (!audio->instances) 
         return;
@@ -409,17 +450,26 @@ void ma_audio_commit(ma_device* device, void* output, const void* input, ma_uint
     // Mutex not working for pushing samples back. Need to copy sample data OVER at a synced position.
     // Add sample data into byte buffer to push back, but this has to be done to sync with audio
     // thread so that it's consistent and smooth feeding.
-    ma_mutex_lock(&ma->lock);
+    gs_audio_mutex_lock(audio);
     {
-        for (u32 i = 0; i < gs_slot_array_size(audio->instances); ++i)
+        for (
+            gs_slot_array_iter it = gs_slot_array_iter_new(audio->instances);
+            gs_slot_array_iter_valid(audio->instances, it);
+            gs_slot_array_iter_advance(audio->instances, it)
+        )
         {
-            gs_audio_instance_t* inst = &audio->instances->data[i];
+            if (!gs_slot_array_handle_valid(audio->instances, it)) {
+                continue;
+            }
+
+            gs_audio_instance_t* inst = gs_slot_array_iter_getp(audio->instances, it);
 
             // Get raw audio source from instance
             gs_audio_source_t* src = gs_slot_array_getp(audio->sources, inst->src.id);
 
             // Easy out if the instance is not playing currently or the source is invalid
             if (!inst->playing || !src) {
+                handles_to_destroy[destroy_count++] = it;
                 continue;
             }
 
@@ -504,23 +554,44 @@ void ma_audio_commit(ma_device* device, void* output, const void* input, ma_uint
                         // Need to destroy the instance at this point...
                         inst->playing = false;
                         inst->sample_position = 0;
+                        handles_to_destroy[destroy_count++] = it;
                         break;
                     }
                 }
-
             }
         }
+
+        // Destroy instances
+        // for (uint32_t i = 0; i < destroy_count; ++i) {
+            // gs_println("destroying: %zu", handles_to_destroy[i]);
+            // gs_slot_array_erase(audio->instances, handles_to_destroy[i]);
+        // }
     }
-    ma_mutex_unlock(&ma->lock);
+
+    gs_audio_mutex_unlock(audio);
 }
 
-gs_result gs_audio_init(gs_audio_i* audio)
+// Change this to fix sized audio instance buffer, then just use that internally.
+// The slot array isn't working across threads.
+// Or copy data over from one thread to another at a guaranteed sync point.
+
+gs_result gs_audio_init(gs_audio_t* audio)
 {
     // Set user data of audio to be miniaudio data
     audio->user_data = gs_malloc_init(miniaudio_data_t);
+    gs_slot_array_reserve(audio->instances, 1024);
     miniaudio_data_t* output = (miniaudio_data_t*)audio->user_data;
 
     ma_result result = gs_default_val();
+
+     // Init audio context
+    ma_context_config ctx_config = ma_context_config_init();
+
+    result = ma_context_init(NULL, 0, &ctx_config, &output->context);
+    if (result != MA_SUCCESS) {
+        gs_assert(false);
+        return GS_RESULT_FAILURE;
+    }
 
       // Init audio device
     // NOTE: Using the default device. Format is floating point because it simplifies mixing.
@@ -545,10 +616,15 @@ gs_result gs_audio_init(gs_audio_i* audio)
         gs_assert(false);
     }
 
+    // Initialize the mutex, ya dummy
+    if (ma_mutex_init(&output->lock) != MA_SUCCESS) {
+        gs_assert(false);
+    }
+
     return GS_RESULT_SUCCESS;
 }
 
-gs_result gs_audio_shutdown(gs_audio_i* audio)
+gs_result gs_audio_shutdown(gs_audio_t* audio)
 {
     return GS_RESULT_SUCCESS;
 }
