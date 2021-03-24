@@ -39,10 +39,10 @@
     <ClCompile Include="Source\Engine\Components\RigidBody2D.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\Components\PlayerComponent.cpp">
+    <ClCompile Include="Source\Engine\Components\Camera2D.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\Components\Camera2D.cpp">
+    <ClCompile Include="Source\Engine\Components\Text.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -57,9 +57,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Include\Engine\Components\Image2D.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Include\Engine\Components\PlayerComponent.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Include\Engine\Components\RigidBody2D.h">
@@ -78,6 +75,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Include\Engine\Components\Camera2D.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Engine\Components\Text.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
