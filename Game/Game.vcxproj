@@ -156,6 +156,7 @@
     <ClCompile Include="Source\Main.cpp" />
     <ClCompile Include="Source\PlayerComponent.cpp" />
     <ClCompile Include="Source\Slider.cpp" />
+    <ClCompile Include="Source\Tag.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Engine2D.vcxproj">
@@ -168,6 +169,7 @@
   <ItemGroup>
     <ClInclude Include="Source\PlayerComponent.h" />
     <ClInclude Include="Source\Slider.h" />
+    <ClInclude Include="Source\Tag.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
