@@ -51,6 +51,14 @@ void PlayerComponent::Update() {
 						t->position.x = -300.f;
 					}
 				}
+				else if (tag->name == "zombie") {
+					m_score -= 1;
+					auto t = body->lastCollision->Get<Transform2D>();
+					if (t) {
+						// Forçando o zombi a se regenerar
+						t->position.x = -300.f;
+					}
+				}
 			}
 		}
 	}

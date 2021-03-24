@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
 	app.LoadAudio("jump_s", "./Data/audio/sfx_movement_jump1.wav");
 	app.LoadAudio("music",  "./Data/audio/Through the Portal.ogg");
 
-	PlayAudio("music", 0.5f);
+	PlayAudio("music", 0.1f);
 
 	// Camera
 	app.camera.position = { 0.f, 40.f };
@@ -61,29 +61,26 @@ int main(int argc, char *argv[]) {
 		app.AddEntity(a);
 	}
 	// Adicionando uma Entidade para o Jogador...
-	for (int i = 0; i < 3; i++) {
+	{
 		Entity* a = new Entity();
 
-		a->Add(new Transform2D({ 200.f + 200.f * i, 200.f - 50.f * i }, { 100.f, 100.f }));
-		a->Add(new Image2D(i == 0 ? "player" : "zombie"));
+		a->Add(new Transform2D({ 200.f + 200.f, 200.f - 50.f }, { 100.f, 100.f }));
+		a->Add(new Image2D("player"));
 
 		a->Add(new BoxCollider2D(0.7f, 1.f));
 		a->Add(new RigidBody2D());
 
-		if (i == 0) {
-			a->Add(new PlayerComponent());
-			//a->Add(new Camera2D(Vector(400.f, 300.f)));
+		a->Add(new PlayerComponent());
 
-			auto text = new Text();
+		auto text = new Text();
 
-			text->position = { 50.f, 50.f };
-			text->text = "Testing...";
-
-			a->Add(text);
-		}
+		text->position = { 50.f, 50.f };
+		text->text = "Score...";
+		a->Add(text);
 
 		app.AddEntity(a);
 	}
+
 	/// Adicionando Entidades para o Chão...
 	for (int i = -10; i < NUM_COLUMNS; i++) {
 		for (int j = 0; j < 2; j++) {
@@ -128,6 +125,24 @@ int main(int argc, char *argv[]) {
 			a->Add(new Image2D("coin"));
 			a->Add(new Tag("coin"));
 			a->Add(new BoxCollider2D(0.2f, 0.2f));
+			a->Add(new Slider(true));
+
+			app.AddEntity(a);
+		}
+	}
+
+	// E os inimigos...
+	for (int i = 0; i < 5; i++) {
+		if (std::rand() % 100 < 60) {
+			Entity* a = new Entity();
+
+			a->Add(new Transform2D(
+				{ 600.f + 300.f * i, 100.f + 50.f * (std::rand() % 10) },
+				{ 100.f, 100.f }
+			));
+			a->Add(new Image2D("zombie"));
+			a->Add(new Tag("zombie"));
+			a->Add(new BoxCollider2D(0.8f, 0.8f));
 			a->Add(new Slider(true));
 
 			app.AddEntity(a);
