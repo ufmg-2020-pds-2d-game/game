@@ -11,7 +11,7 @@ public:
 	virtual void Update() override;
 
 protected:
-	void SpawnCoins();
+	int m_score;
 
 	float m_jumpForce;
 };

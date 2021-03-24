@@ -3,10 +3,13 @@
 #include <iostream>
 
 #include "Engine.h"
+
 #include "Slider.h"
+#include "Tag.h"
 
 
 PlayerComponent::PlayerComponent() {
+	m_score = 0;
 	m_jumpForce = 0.f;
 }
 
@@ -35,10 +38,25 @@ void PlayerComponent::Update() {
 		m_jumpForce -= 450.f * gs_platform_delta_time();
 	}
 
-	SpawnCoins();
-}
+	RigidBody2D* body = GetEntity()->Get<RigidBody2D>();
+	if (body) {
+		if (body->lastCollision) {
+			auto tag = body->lastCollision->Get<Tag>();
+			if (tag) {
+				if (tag->name == "coin") {
+					m_score += 1;
+					auto t = body->lastCollision->Get<Transform2D>();
+					if (t) {
+						// Forçando a moeda a se regenerar
+						t->position.x = -300.f;
+					}
+				}
+			}
+		}
+	}
 
-void PlayerComponent::SpawnCoins() {
-	static int timer = 0;
-	timer += 1;
+	auto text = GetEntity()->Get<Text>();
+	if (text) {
+		text->text = "Score: " + std::to_string(m_score);
+	}
 }

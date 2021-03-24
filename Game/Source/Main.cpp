@@ -5,7 +5,7 @@
 
 #include "Slider.h"
 #include "PlayerComponent.h"
-
+#include "Tag.h"
 
 int main(int argc, char *argv[]) {
 	App app;
@@ -126,6 +126,7 @@ int main(int argc, char *argv[]) {
 				{ 300.f, 300.f }
 			));
 			a->Add(new Image2D("coin"));
+			a->Add(new Tag("coin"));
 			a->Add(new BoxCollider2D(0.2f, 0.2f));
 			a->Add(new Slider(true));
 
