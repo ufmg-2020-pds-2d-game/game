@@ -288,13 +288,18 @@ void App::Draw(){
 		Text* text = e->Get<Text>();
 
 		if (text) {
+			gsi_push_matrix(&m_gsi, GSI_MATRIX_MODELVIEW);
+			gsi_transf(&m_gsi, text->position.x, text->position.y, 0.f);
+			gsi_scalef(&m_gsi, text->scale * 0.1f, text->scale * 0.1f, 1.f);
+
 			gsi_text(
 				&m_gsi,
-				text->position.x, text->position.y,
+				0.f, 0.f,
 				text->text.c_str(),
 				NULL, false,
 				255, 255, 255, 255
 			);
+			gsi_pop_matrix(&m_gsi);
 		}
 	}
 

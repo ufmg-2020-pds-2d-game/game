@@ -122,7 +122,7 @@ int main(int argc, char *argv[]) {
 			Entity* a = new Entity();
 
 			a->Add(new Transform2D(
-				{ 2000.f + 600.f * i, 100.f + 50.f * (std::rand() % 10) },
+				{ 300.f + 300.f * i, 100.f + 50.f * (std::rand() % 10) },
 				{ 300.f, 300.f }
 			));
 			a->Add(new Image2D("coin"));

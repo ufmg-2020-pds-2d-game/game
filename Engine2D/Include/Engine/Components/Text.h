@@ -13,6 +13,7 @@ public:
 	virtual ~Text();
 
 	Vector position;
+	float scale;
 	std::string text;
 protected:
 };

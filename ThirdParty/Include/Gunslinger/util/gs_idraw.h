@@ -406,7 +406,7 @@ gs_immediate_draw_t gs_immediate_draw_new()
 	u8* flipmap = (u8*)gs_malloc(w * h * num_comps);
 	memset(alpha_bitmap, 0, w * h);
 	memset(flipmap, 0, w * h * num_comps);
-   	s32 v = stbtt_BakeFontBitmap((u8*)buf_decompressed_data, 0, 16.f, alpha_bitmap, w, h, 32, 96, (stbtt_bakedchar*)f->glyphs); // no guarantee this fits!
+   	s32 v = stbtt_BakeFontBitmap((u8*)buf_decompressed_data, 0, 64.f, alpha_bitmap, w, h, 32, 96, (stbtt_bakedchar*)f->glyphs); // no guarantee this fits!
 
    	// Flip texture
    	u32 r = h - 1;
