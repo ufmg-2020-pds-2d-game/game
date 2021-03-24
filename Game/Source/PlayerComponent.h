@@ -10,7 +10,6 @@ public:
 
 	virtual void Update() override;
 
-	float speed;
 protected:
 	float m_jumpForce;
 };
